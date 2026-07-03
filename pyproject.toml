@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "venue-finder"
+version = "0.1.0"
+description = "Energy Travel venue discovery and scoring MVP"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "SQLAlchemy>=2.0",
+  "pandas>=2.0",
+  "openpyxl>=3.1",
+  "geopy>=2.4",
+  "beautifulsoup4>=4.12",
+  "playwright>=1.46",
+  "openai>=1.40",
+  "psycopg[binary]>=3.2",
+]
+
+[project.scripts]
+venue-finder = "venue_finder.main:main"
+
+[tool.vercel]
+entrypoint = "index:handler"
+
+[tool.setuptools]
+packages = ["venue_finder"]
