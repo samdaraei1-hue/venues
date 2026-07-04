@@ -130,15 +130,34 @@ def persist_venues(database_url: str, venues: list[Venue]) -> int:
 
 
 def export_reports(database_url: str, output_dir: Path) -> tuple[Path, Path]:
+    """Export to CSV/XLSX when filesystem allows it.
+
+    Some serverless environments (e.g. Vercel) mount the repo directory as
+    read-only. In that case we still want scraping + DB persistence to work.
+
+    If exports fail, we write nothing and return best-effort paths.
+    """
+
     with session_scope(database_url) as session:
         venues = list_venues(session)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = output_dir / f"venues_{timestamp}.csv"
     xlsx_path = output_dir / f"venues_{timestamp}.xlsx"
-    export_csv(venues, csv_path)
-    export_excel(venues, xlsx_path)
+
+    try:
+        export_csv(venues, csv_path)
+    except OSError:
+        # Ignore export failures (read-only FS, etc.)
+        pass
+
+    try:
+        export_excel(venues, xlsx_path)
+    except OSError:
+        pass
+
     return csv_path, xlsx_path
+
 
 
 def run_once() -> tuple[int, Path, Path]:
