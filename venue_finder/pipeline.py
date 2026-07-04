@@ -9,8 +9,14 @@ from venue_finder.core.config import AppConfig, get_config
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
 from venue_finder.core.repository import list_keywords, list_venues, seed_default_keywords, upsert_venues
-from venue_finder.exports.csv_export import export_csv
-from venue_finder.exports.excel_export import export_excel
+# Exports are optional in serverless environments (e.g. Vercel) where writing files
+# may be restricted or some modules may not be bundled correctly.
+try:
+    from venue_finder.exports.csv_export import export_csv  # type: ignore
+    from venue_finder.exports.excel_export import export_excel  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    export_csv = None  # type: ignore
+    export_excel = None  # type: ignore
 
 from venue_finder.processors.feature_extractor import extract_feature_flags, extract_quiet_hours
 from venue_finder.processors.distance_calculator import calculate_distance
@@ -146,16 +152,18 @@ def export_reports(database_url: str, output_dir: Path) -> tuple[Path, Path]:
     csv_path = output_dir / f"venues_{timestamp}.csv"
     xlsx_path = output_dir / f"venues_{timestamp}.xlsx"
 
-    try:
-        export_csv(venues, csv_path)
-    except OSError:
-        # Ignore export failures (read-only FS, etc.)
-        pass
+    if export_csv is not None:
+        try:
+            export_csv(venues, csv_path)
+        except OSError:
+            # Ignore export failures (read-only FS, etc.)
+            pass
 
-    try:
-        export_excel(venues, xlsx_path)
-    except OSError:
-        pass
+    if export_excel is not None:
+        try:
+            export_excel(venues, xlsx_path)
+        except OSError:
+            pass
 
     return csv_path, xlsx_path
 
