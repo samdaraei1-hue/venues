@@ -134,6 +134,7 @@ def _render_page(
     party_ready = sum(1 for venue in venues if (venue.party_score or 0) >= 80)
 
     rows = []
+
     for venue in venues:
         score = venue.party_score or 0
         score_class = "good" if score >= 80 else "mid" if score >= 50 else "bad"
@@ -686,12 +687,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         filters = _build_filters(params)
+        seeded_demo = False
         with session_scope(config.database_url) as session:
             seed_default_keywords(session)
             venues = list_venues(session, filters)
+
+            # If DB is empty, seed demo data so the UI isn't blank.
+            if not venues:
+                from venue_finder.pipeline import seed_demo_data  # local import to avoid cycles
+
+                inserted, csv_path, xlsx_path = seed_demo_data()
+                seeded_demo = inserted > 0
+                venues = list_venues(session, filters)
+
             keywords = list_keywords(session)
 
-        body = _render_page(venues, params, keywords).encode("utf-8")
+        body_message = "DB empty: seeded demo venues." if seeded_demo else None
+        body = _render_page(venues, params, keywords, message=body_message).encode("utf-8")
+
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

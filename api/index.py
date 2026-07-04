@@ -111,8 +111,23 @@ def dashboard():
     with session_scope(config.database_url) as session:
         seed_default_keywords(session)
         venues = list_venues(session, filters)
+
+        seeded_demo = False
+        if not venues:
+            from venue_finder.pipeline import seed_demo_data  # local import to avoid cycles
+
+            inserted, csv_path, xlsx_path = seed_demo_data()
+            seeded_demo = inserted > 0
+            venues = list_venues(session, filters)
+
         keywords = list_keywords(session)
-    return _render_page(venues, params, keywords, message=message)
+
+    body_message = message
+    if seeded_demo:
+        body_message = "DB empty: seeded demo venues." if not body_message else body_message
+
+    return _render_page(venues, params, keywords, message=body_message)
+
 
 
 @app.route("/api/venues.json", methods=["GET"])
