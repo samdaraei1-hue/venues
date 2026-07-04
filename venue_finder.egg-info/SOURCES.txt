@@ -11,3 +11,6 @@ venue_finder.egg-info/dependency_links.txt
 venue_finder.egg-info/entry_points.txt
 venue_finder.egg-info/requires.txt
 venue_finder.egg-info/top_level.txt
+venue_finder/exports/__init__.py
+venue_finder/exports/csv_export.py
+venue_finder/exports/excel_export.py

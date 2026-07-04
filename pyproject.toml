@@ -28,5 +28,7 @@ venue-finder = "venue_finder.main:main"
 entrypoint = "index:handler"
 
 [tool.setuptools]
-packages = ["venue_finder", "venue_finder.exports", "venue_finder.core", "venue_finder.processors", "venue_finder.scrapers"]
+packages = ["venue_finder", "venue_finder.exports"]
+
+
 
