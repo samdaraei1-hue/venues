@@ -9,6 +9,7 @@ description = "Energy Travel venue discovery and scoring MVP"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "flask>=3.0",
   "SQLAlchemy>=2.0",
   "pandas>=2.0",
   "openpyxl>=3.1",
@@ -18,6 +19,7 @@ dependencies = [
   "openai>=1.40",
   "psycopg[binary]>=3.2",
 ]
+
 
 [project.scripts]
 venue-finder = "venue_finder.main:main"
