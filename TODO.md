@@ -1,12 +1,26 @@
 # TODO
 
-## Fix Vercel 500 (site not loading)
-- [x] Inspect serverless entrypoints: `api/index.py`, `api/cron.py`, `venue_finder/core/database.py`, `venue_finder/core/config.py`.
-- [x] Identify likely crash causes (DB init/connectivity, missing env vars, packaging/import issues).
-- [x] Remove unused/possibly problematic import (`os`) from `api/index.py` (no logic change).
-- [ ] Add structured logging + surface DB connection error details in JSON and HTML.
-- [ ] Ensure `DATABASE_URL` works in Vercel (fallback behavior when env is missing).
-- [ ] Add `VENUE_FINDER_OUTPUT_DIR` / filesystem write safeguards for serverless.
-- [ ] Run local smoke tests that mimic Vercel entrypoint: `python api/index.py` (if applicable) and `flask`/handler invocation.
-- [ ] After fixes, redeploy and verify `/` and `/api/venues.json` return 200.
+- [x] Repo identified current capabilities: dashboard filters + keyword management + scrape/export + conditional Excel formatting.
+- [x] Add Venue CRUD backend (add/update/delete) via repository + score recalculation after edits.
+
+
+- [ ] Extend `venue_finder/webapp.py` dashboard with:
+
+
+  - [ ] per-row small buttons: `edit` and `delete`
+  - [ ] edit mode that turns a row into inline inputs (Excel-like editing)
+  - [ ] an empty blank row at the bottom for manual add
+  - [ ] “Save” button for the inline edited row and the add row
+- [ ] Wire routes in `DashboardHandler` for:
+  - [ ] POST `/venues/add`
+  - [ ] POST `/venues/update`
+  - [ ] POST `/venues/delete`
+- [x] Implement deterministic score refresh after manual add/edit using existing `TextAnalyzer` and feature extraction.
+
+- [ ] Ensure exports include the updated records automatically (likely no changes).
+
+- [ ] Smoke test locally:
+  - [ ] `python -m venue_finder.main init-db`
+  - [ ] `python -m venue_finder.main serve`
+  - [ ] add/edit/delete a venue and verify it appears + party score updates
 

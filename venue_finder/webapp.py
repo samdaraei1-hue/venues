@@ -9,8 +9,24 @@ import webbrowser
 from venue_finder.core.config import get_config
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.keywords import DEFAULT_SEARCH_KEYWORDS
-from venue_finder.core.repository import VenueFilters, add_keyword, list_keywords, list_venues, remove_keyword, replace_keywords, seed_default_keywords
-from venue_finder.pipeline import run_continuous, run_once
+from venue_finder.core.repository import (
+    VenueFilters,
+    add_keyword,
+    delete_venue_by_id,
+    get_venue_by_id,
+    list_keywords,
+    list_venues,
+    remove_keyword,
+    replace_keywords,
+    seed_default_keywords,
+    upsert_manual_venue,
+)
+
+
+from venue_finder.pipeline import recalculate_scores, run_continuous, run_once
+from venue_finder.core.models import Venue
+
+
 import threading
 
 
@@ -38,6 +54,40 @@ def _int_param(value: list[str]) -> int | None:
         return None
 
 
+def _get_form_str(form: dict[str, list[str]], key: str, default: str = "") -> str:
+    values = form.get(key)
+    if not values:
+        return default
+    return (values[0] or "").strip()
+
+
+def _get_form_int(form: dict[str, list[str]], key: str) -> int | None:
+    value = _get_form_str(form, key, default="")
+    if value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _get_form_float(form: dict[str, list[str]], key: str) -> float | None:
+    value = _get_form_str(form, key, default="")
+    if value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _get_form_bool(form: dict[str, list[str]], key: str) -> bool:
+    values = form.get(key)
+    if not values:
+        return False
+    return values[0].lower() in {"1", "true", "yes", "on"}
+
+
 def _build_filters(params: dict[str, list[str]]) -> VenueFilters:
     return VenueFilters(
         max_distance_km=_float_param(params.get("max_distance_km", [])),
@@ -50,6 +100,7 @@ def _build_filters(params: dict[str, list[str]]) -> VenueFilters:
         loud_music_allowed=_bool_param(params.get("loud_music_allowed", [])),
         weekend_available=_bool_param(params.get("weekend_available", [])),
     )
+
 
 
 def _render_checkbox(name: str, label: str, checked: bool) -> str:
@@ -67,7 +118,15 @@ def _render_keyword_pills(keywords: list[str]) -> str:
     ) or '<span class="small">No keywords configured.</span>'
 
 
-def _render_page(venues, params: dict[str, list[str]], keywords: list[str], message: str | None = None) -> str:
+def _render_page(
+    venues,
+    params: dict[str, list[str]],
+    keywords: list[str],
+    message: str | None = None,
+    edit_id: int | None = None,
+    add_defaults: dict[str, str] | None = None,
+) -> str:
+
     filters = _build_filters(params)
     total = len(venues)
     avg_score = round(sum((venue.party_score or 0) for venue in venues) / total, 1) if total else 0
@@ -78,25 +137,97 @@ def _render_page(venues, params: dict[str, list[str]], keywords: list[str], mess
     for venue in venues:
         score = venue.party_score or 0
         score_class = "good" if score >= 80 else "mid" if score >= 50 else "bad"
+        is_edit = edit_id is not None and venue.id == edit_id
+
+        name_html = f"<input name='name' value='{escape(venue.name or '')}' />" if is_edit else escape(venue.name or "")
+        source_name_html = (
+            f"<input name='source_name' value='{escape(venue.source_name or '')}' />" if is_edit else escape(venue.source_name or "")
+        )
+        city_html = f"<input name='city' value='{escape(venue.city or '')}' />" if is_edit else escape(venue.city or "")
+        guests_html = (
+            f"<input type='number' name='maximum_guests' value='{venue.maximum_guests or ''}' />" if is_edit else (str(venue.maximum_guests or ""))
+        )
+
+        camping_html = (
+            "<select name='camping_allowed'>"
+            f"<option value='1' {'selected' if venue.camping_allowed else ''}>yes</option>"
+            f"<option value='0' {'selected' if not venue.camping_allowed else ''}>no</option>"
+            "</select>"
+            if is_edit
+            else ('yes' if venue.camping_allowed else 'no')
+        )
+        parties_html = (
+            "<select name='parties_allowed'>"
+            f"<option value='1' {'selected' if venue.parties_allowed else ''}>yes</option>"
+            f"<option value='0' {'selected' if not venue.parties_allowed else ''}>no</option>"
+            "</select>"
+            if is_edit
+            else ('yes' if venue.parties_allowed else 'no')
+        )
+        bbq_html = (
+            "<select name='bbq_available'>"
+            f"<option value='1' {'selected' if venue.bbq_available else ''}>yes</option>"
+            f"<option value='0' {'selected' if not venue.bbq_available else ''}>no</option>"
+            "</select>"
+            if is_edit
+            else ('yes' if venue.bbq_available else 'no')
+        )
+        loud_music_html = (
+            "<select name='loud_music_allowed'>"
+            f"<option value='1' {'selected' if venue.loud_music_allowed else ''}>yes</option>"
+            f"<option value='0' {'selected' if not venue.loud_music_allowed else ''}>no</option>"
+            "</select>"
+            if is_edit
+            else ('yes' if venue.loud_music_allowed else 'no')
+        )
+
+        quiet_start_html = (
+            f"<input name='quiet_hours_start' value='{escape(venue.quiet_hours_start or '')}' />" if is_edit else escape(venue.quiet_hours_start or "")
+        )
+        quiet_end_html = (
+            f"<input name='quiet_hours_end' value='{escape(venue.quiet_hours_end or '')}' />" if is_edit else escape(venue.quiet_hours_end or "")
+        )
+
+        suitability_html = f"<input name='suitability_summary' value='{escape(venue.suitability_summary or '')}' />" if is_edit else escape(venue.suitability_summary or "")
+
+        actions_html = "" if not is_edit else ""
+        edit_or_save = (
+            f"<form method='post' action='/venues/update'>"
+            f"<input type='hidden' name='venue_id' value='{venue.id}' />"
+            f"<input type='hidden' name='return_to' value='{escape(str(params.get('return_to', [''])[0]) if params else '')}' />"
+            f"<button class='button primary' type='submit'>save</button>"
+            f"</form>"
+            if is_edit
+            else f"<a class='button secondary' href='/?edit={venue.id}'>edit</a>"
+        )
+
+        delete_form = (
+            f"<form method='post' action='/venues/delete' style='margin:0;'>"
+            f"<input type='hidden' name='venue_id' value='{venue.id}' />"
+            f"<button class='button secondary' type='submit' onclick=\"return confirm('Delete venue {venue.id}?')\">delete</button>"
+            f"</form>"
+        )
+
         rows.append(
             "<tr>"
             f"<td>{venue.id}</td>"
             f"<td class='score {score_class}'>{score}</td>"
-            f"<td>{escape(venue.name or '')}</td>"
-            f"<td>{escape(venue.source_name or '')}</td>"
-            f"<td>{escape(venue.city or '')}</td>"
-            f"<td>{venue.maximum_guests or ''}</td>"
+            f"<td>{name_html}</td>"
+            f"<td>{source_name_html}</td>"
+            f"<td>{city_html}</td>"
+            f"<td>{guests_html}</td>"
             f"<td>{venue.distance_from_frankfurt_km or ''}</td>"
-            f"<td>{'yes' if venue.camping_allowed else 'no'}</td>"
-            f"<td>{'yes' if venue.parties_allowed else 'no'}</td>"
-            f"<td>{'yes' if venue.bbq_available else 'no'}</td>"
-            f"<td>{'yes' if venue.loud_music_allowed else 'no'}</td>"
-            f"<td>{escape(venue.quiet_hours_start or '')}</td>"
-            f"<td>{escape(venue.quiet_hours_end or '')}</td>"
-            f"<td>{escape(venue.suitability_summary or '')}</td>"
-            f"<td><a href='{escape(venue.source_url)}' target='_blank' rel='noreferrer'>open</a></td>"
+            f"<td>{camping_html}</td>"
+            f"<td>{parties_html}</td>"
+            f"<td>{bbq_html}</td>"
+            f"<td>{loud_music_html}</td>"
+            f"<td>{quiet_start_html}</td>"
+            f"<td>{quiet_end_html}</td>"
+            f"<td>{suitability_html}</td>"
+            f"<td><div style='display:flex;flex-direction:column;gap:6px;align-items:flex-start;'>{delete_form}{edit_or_save}<a href='{escape(venue.source_url)}' target='_blank' rel='noreferrer'>open</a></div></td>"
             "</tr>"
         )
+
 
     checkbox = " ".join(
         [
@@ -114,6 +245,7 @@ def _render_page(venues, params: dict[str, list[str]], keywords: list[str], mess
     return f"""<!doctype html>
 <html lang="de">
 <head>
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Venue Finder Dashboard</title>
@@ -368,6 +500,7 @@ def _render_page(venues, params: dict[str, list[str]], keywords: list[str], mess
         </thead>
         <tbody>
           {''.join(rows) if rows else '<tr><td colspan="15">No venues found. Seed demo data first.</td></tr>'}
+
         </tbody>
       </table>
     </div>
@@ -435,7 +568,73 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
 
+        if parsed.path == "/venues/delete":
+            venue_id = _int_param(form.get("venue_id", []))
+            if venue_id is not None:
+                with session_scope(config.database_url) as session:
+                    delete_venue_by_id(session, venue_id)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/venues/add":
+            with session_scope(config.database_url) as session:
+                venue = Venue(
+                    name=_get_form_str(form, "name"),
+                    source_name=_get_form_str(form, "source_name"),
+                    city=_get_form_str(form, "city"),
+                    maximum_guests=_get_form_int(form, "maximum_guests"),
+                    camping_allowed=_get_form_bool(form, "camping_allowed"),
+                    parties_allowed=_get_form_bool(form, "parties_allowed"),
+                    bbq_available=_get_form_bool(form, "bbq_available"),
+                    loud_music_allowed=_get_form_bool(form, "loud_music_allowed"),
+                    private_property=_get_form_bool(form, "private_property"),
+                    quiet_hours_start=_get_form_str(form, "quiet_hours_start") or None,
+                    quiet_hours_end=_get_form_str(form, "quiet_hours_end") or None,
+                    suitability_summary=_get_form_str(form, "suitability_summary") or None,
+                    restrictions_summary=None,
+                    website=None,
+                    venue_type=None,
+                    source_url=_get_form_str(form, "source_url") or "manual://unknown",
+                    street_address=None,
+                    latitude=_get_form_float(form, "latitude"),
+                    longitude=_get_form_float(form, "longitude"),
+                    raw_text=_get_form_str(form, "raw_text") or None,
+                )
+                # Ensure deterministic score refresh.
+                recalculate_scores(venue, config)
+                # Manual insert/update by source_url to avoid accidental duplicates.
+                saved, created = upsert_manual_venue(session, venue)
+                _ = (saved, created)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/venues/update":
+            venue_id = _int_param(form.get("venue_id", []))
+            if venue_id is not None:
+                with session_scope(config.database_url) as session:
+                    existing = get_venue_by_id(session, venue_id)
+                    if existing is not None:
+                        existing.name = _get_form_str(form, "name", default=existing.name or "")
+                        existing.source_name = _get_form_str(form, "source_name", default=existing.source_name or "")
+                        existing.city = _get_form_str(form, "city", default=existing.city or "")
+                        existing.maximum_guests = _get_form_int(form, "maximum_guests")
+                        existing.camping_allowed = _get_form_bool(form, "camping_allowed")
+                        existing.parties_allowed = _get_form_bool(form, "parties_allowed")
+                        existing.bbq_available = _get_form_bool(form, "bbq_available")
+                        existing.loud_music_allowed = _get_form_bool(form, "loud_music_allowed")
+                        existing.private_property = _get_form_bool(form, "private_property")
+                        existing.quiet_hours_start = _get_form_str(form, "quiet_hours_start") or None
+                        existing.quiet_hours_end = _get_form_str(form, "quiet_hours_end") or None
+                        existing.suitability_summary = _get_form_str(form, "suitability_summary") or None
+                        existing.raw_text = _get_form_str(form, "raw_text") or existing.raw_text
+
+                        recalculate_scores(existing, config)
+            self._redirect("/")
+            return
+
+
         self._redirect("/")
+
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)

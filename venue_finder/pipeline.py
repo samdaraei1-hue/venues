@@ -4,7 +4,8 @@ from datetime import datetime
 from pathlib import Path
 import time
 
-from venue_finder.core.config import get_config
+from venue_finder.core.config import AppConfig, get_config
+
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
 from venue_finder.core.repository import list_keywords, list_venues, seed_default_keywords, upsert_venues
@@ -161,6 +162,62 @@ def run_continuous(interval_minutes: int) -> None:
         time.sleep(delay)
 
 
+def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
+    """Recompute feature flags + quiet hours + party score for a single venue."""
+
+    analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
+
+    # Refresh feature flags + quiet hours from current text.
+    text = collect_text(venue)
+    feature_flags = extract_feature_flags(text)
+
+
+    venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)
+
+    venue.parties_allowed = venue.parties_allowed or feature_flags.get("parties_allowed", False)
+    venue.loud_music_allowed = venue.loud_music_allowed or feature_flags.get("loud_music_allowed", False)
+    venue.dj_allowed = venue.dj_allowed or feature_flags.get("dj_allowed", False)
+    venue.sound_system_available = venue.sound_system_available or feature_flags.get("sound_system_available", False)
+    venue.outdoor_party_area = venue.outdoor_party_area or feature_flags.get("outdoor_party_area", False)
+    venue.bbq_available = venue.bbq_available or feature_flags.get("bbq_available", False)
+    venue.fire_place = venue.fire_place or feature_flags.get("fire_place", False)
+    venue.swimming_pool = venue.swimming_pool or feature_flags.get("swimming_pool", False)
+    venue.lake_or_river_nearby = venue.lake_or_river_nearby or feature_flags.get("lake_or_river_nearby", False)
+    venue.private_property = venue.private_property or feature_flags.get("private_property", False)
+
+    quiet_start, quiet_end = extract_quiet_hours(text)
+    if venue.quiet_hours_start is None and quiet_start is not None:
+        venue.quiet_hours_start = quiet_start
+    if venue.quiet_hours_end is None and quiet_end is not None:
+        venue.quiet_hours_end = quiet_end
+
+    # Run deterministic text analyzer.
+    enriched = analyzer.analyze(collect_text(venue), venue=venue)
+    venue.party_score = enriched.party_score
+    venue.parties_allowed = venue.parties_allowed or enriched.suitable_for_party
+    venue.camping_allowed = venue.camping_allowed or enriched.camping_possible
+    venue.private_property = venue.private_property or enriched.private_venue
+
+    # Keep user-provided quiet hours; only fill if missing.
+    if venue.quiet_hours_start is None:
+        venue.quiet_hours_start = enriched.quiet_hours_start
+    if venue.quiet_hours_end is None:
+        venue.quiet_hours_end = enriched.quiet_hours_end
+
+
+
+    venue.suitability_summary = enriched.suitability_summary
+    venue.restrictions_summary = enriched.restrictions_summary
+
+    # Distance (if lat/lon already provided/updated)
+    if venue.latitude is not None and venue.longitude is not None:
+        distance = calculate_distance(config.frankfurt_latitude, config.frankfurt_longitude, venue.latitude, venue.longitude)
+        venue.distance_from_frankfurt_km = distance.distance_km
+        venue.driving_time_minutes = distance.driving_time_minutes
+
+    return venue
+
+
 def seed_demo_data() -> tuple[int, Path, Path]:
     config = get_config()
     init_from_config(config)
@@ -173,3 +230,4 @@ def seed_demo_data() -> tuple[int, Path, Path]:
     inserted = persist_venues(config.database_url, venues)
     csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
     return inserted, csv_path, xlsx_path
+

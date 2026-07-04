@@ -71,6 +71,53 @@ def list_venues(session: Session, filters: VenueFilters | None = None) -> list[V
     return list(session.scalars(query).all())
 
 
+def get_venue_by_id(session: Session, venue_id: int) -> Venue | None:
+    return session.scalar(select(Venue).where(Venue.id == venue_id))
+
+
+def delete_venue_by_id(session: Session, venue_id: int) -> bool:
+    venue = get_venue_by_id(session, venue_id)
+    if venue is None:
+        return False
+    session.delete(venue)
+    session.flush()
+    return True
+
+
+def upsert_manual_venue(session: Session, venue: Venue) -> tuple[Venue, bool]:
+    """Insert or update a venue created/edited from the UI.
+
+    Strategy:
+    - Prefer matching by `id` if provided.
+    - Else match by `source_url` if it exists.
+    - Else insert as new.
+
+    We intentionally DO NOT merge fuzzy duplicates here; manual editing should be
+    predictable and user-driven.
+    """
+
+    if venue.id is not None:
+        existing = get_venue_by_id(session, venue.id)
+        if existing is not None:
+            _merge_non_null_fields(existing, venue)
+            session.flush()
+            return existing, False
+
+    if venue.source_url:
+        existing = session.scalar(select(Venue).where(Venue.source_url == venue.source_url))
+        if existing is not None:
+            _merge_non_null_fields(existing, venue)
+            session.flush()
+            return existing, False
+
+    session.add(venue)
+    session.flush()
+    return venue, True
+
+
+
+
+
 def _merge_non_null_fields(target: Venue, source: Venue) -> None:
     for column in Venue.__table__.columns.keys():
         if column in {"id", "created_at", "updated_at", "source_url"}:
@@ -99,6 +146,7 @@ def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
     if existing is not None:
         _merge_non_null_fields(existing, venue)
         return existing, False, "updated by source_url"
+
 
     candidates = session.scalars(
         select(Venue).where(

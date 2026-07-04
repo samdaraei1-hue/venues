@@ -1,0 +1,2 @@
+[console_scripts]
+venue-finder = venue_finder.main:main
