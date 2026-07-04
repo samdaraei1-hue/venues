@@ -50,18 +50,33 @@ def _form_params() -> dict[str, list[str]]:
     return {key: request.form.getlist(key) for key in request.form.keys()}
 
 
-def _bootstrap() -> None:
+def _bootstrap() -> tuple[bool, str | None]:
     config = get_config()
-    init_from_config(config)
+    try:
+        init_from_config(config)
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        # Avoid raw 500s; return details in page/JSON so we can see what breaks.
+        return False, f"DB init failed: {exc}"
+
 
 
 @app.route("/", methods=["GET"])
 def dashboard():
-    _bootstrap()
+    ok, db_error = _bootstrap()
     config = get_config()
     params = _params()
     filters = _build_filters(params)
     message = request.args.get("message")
+
+    if not ok:
+        return _render_page(
+            [],
+            params,
+            [],
+            message=(message or db_error or "Database error"),
+        )
+
     with session_scope(config.database_url) as session:
         seed_default_keywords(session)
         venues = list_venues(session, filters)
@@ -69,15 +84,27 @@ def dashboard():
     return _render_page(venues, params, keywords, message=message)
 
 
+
 @app.route("/api/venues.json", methods=["GET"])
 def venues_json():
-    _bootstrap()
+    ok, db_error = _bootstrap()
+    if not ok:
+        return (
+            json.dumps({"ok": False, "error": db_error or "Database error"}, ensure_ascii=False, indent=2),
+            200,
+            {"Content-Type": "application/json; charset=utf-8"},
+        )
     return _handle_json(_params()), 200, {"Content-Type": "application/json; charset=utf-8"}
+
 
 
 @app.route("/scrape-now", methods=["POST"])
 def scrape_now():
-    _bootstrap()
+    ok, db_error = _bootstrap()
+    if not ok:
+        message = db_error or "Database error"
+        return redirect(f"/?message={urlencode({'m': message})[2:]}")
+
     try:
         run_once()
         message = "Scrape finished."
@@ -86,9 +113,13 @@ def scrape_now():
     return redirect(f"/?message={urlencode({'m': message})[2:]}")
 
 
+
 @app.route("/keywords/add", methods=["POST"])
 def keywords_add():
-    _bootstrap()
+    ok, db_error = _bootstrap()
+    if not ok:
+        return redirect(f"/?message={urlencode({'m': db_error or 'Database error'})[2:]}")
+
     config = get_config()
     keyword = (request.form.get("keyword") or "").strip()
     if keyword:
@@ -98,9 +129,13 @@ def keywords_add():
     return redirect("/")
 
 
+
 @app.route("/keywords/remove", methods=["GET"])
 def keywords_remove():
-    _bootstrap()
+    ok, db_error = _bootstrap()
+    if not ok:
+        return redirect(f"/?message={urlencode({'m': db_error or 'Database error'})[2:]}")
+
     config = get_config()
     keyword = (request.args.get("keyword") or "").strip()
     if keyword:
@@ -110,13 +145,18 @@ def keywords_remove():
     return redirect("/")
 
 
+
 @app.route("/keywords/reset", methods=["GET"])
 def keywords_reset():
-    _bootstrap()
+    ok, db_error = _bootstrap()
+    if not ok:
+        return redirect(f"/?message={urlencode({'m': db_error or 'Database error'})[2:]}")
+
     config = get_config()
     with session_scope(config.database_url) as session:
         replace_keywords(session, DEFAULT_SEARCH_KEYWORDS)
     return redirect("/")
+
 
 
 # Vercel looks for either `app` or `handler`; expose both for safety.

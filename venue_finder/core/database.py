@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from collections.abc import Iterator
+import threading
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import AppConfig
 from .models import Base
+
+
+_ENGINE_LOCK = threading.Lock()
+_INIT_DONE = False
 
 
 def build_engine(database_url: str):
@@ -21,11 +26,27 @@ def build_engine(database_url: str):
 
 def build_session_factory(database_url: str):
     engine = build_engine(database_url)
-    return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True), engine
+    return (
+        sessionmaker(
+            bind=engine,
+            autoflush=False,
+            autocommit=False,
+            expire_on_commit=False,
+            future=True,
+        ),
+        engine,
+    )
+
+
+def _ping_engine(engine) -> None:
+    # Lightweight connectivity check; fails fast with better diagnostics.
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
 
 
 def init_db(database_url: str) -> None:
     _, engine = build_session_factory(database_url)
+    _ping_engine(engine)
     Base.metadata.create_all(engine)
 
 
@@ -45,4 +66,13 @@ def session_scope(database_url: str) -> Iterator[Session]:
 
 
 def init_from_config(config: AppConfig) -> None:
-    init_db(config.database_url)
+    global _INIT_DONE
+    if _INIT_DONE:
+        return
+
+    with _ENGINE_LOCK:
+        if _INIT_DONE:
+            return
+        init_db(config.database_url)
+        _INIT_DONE = True
+
