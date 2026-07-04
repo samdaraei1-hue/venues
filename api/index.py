@@ -7,10 +7,10 @@ are wired here. The cron endpoint lives in `api/cron.py`.
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from urllib.parse import urlencode
+
 
 # Make project root importable so `venue_finder.*` resolves on Vercel.
 _ROOT = Path(__file__).resolve().parent.parent

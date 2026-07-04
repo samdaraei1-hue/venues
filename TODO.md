@@ -1,11 +1,12 @@
-# TODO - Venue Finder Vercel 500 Fix
+# TODO
 
-- [x] Identify likely crash area: database initialization / SQLAlchemy connection in serverless.
-- [x] Add Vercel-friendly error handling in `api/index.py` so `/` returns HTTP 200 with an error message instead of crashing.
-
-- [ ] Add lightweight DB connectivity check + better error surfacing in `core/database.py`.
-- [ ] Ensure `init_db()` is only executed once per cold start (avoid repeated metadata.create_all).
-- [x] Redeploy and verify `/` and `/api/venues.json` (after code push).
-
-
+## Fix Vercel 500 (site not loading)
+- [x] Inspect serverless entrypoints: `api/index.py`, `api/cron.py`, `venue_finder/core/database.py`, `venue_finder/core/config.py`.
+- [x] Identify likely crash causes (DB init/connectivity, missing env vars, packaging/import issues).
+- [x] Remove unused/possibly problematic import (`os`) from `api/index.py` (no logic change).
+- [ ] Add structured logging + surface DB connection error details in JSON and HTML.
+- [ ] Ensure `DATABASE_URL` works in Vercel (fallback behavior when env is missing).
+- [ ] Add `VENUE_FINDER_OUTPUT_DIR` / filesystem write safeguards for serverless.
+- [ ] Run local smoke tests that mimic Vercel entrypoint: `python api/index.py` (if applicable) and `flask`/handler invocation.
+- [ ] After fixes, redeploy and verify `/` and `/api/venues.json` return 200.
 
