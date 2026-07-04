@@ -28,7 +28,8 @@ venue-finder = "venue_finder.main:main"
 entrypoint = "index:handler"
 
 [tool.setuptools]
-packages = ["venue_finder", "venue_finder.exports"]
+packages = {find = {where = ["."], include = ["venue_finder*"]}}
+
 
 
 
