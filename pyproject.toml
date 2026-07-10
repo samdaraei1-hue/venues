@@ -24,9 +24,6 @@ dependencies = [
 [project.scripts]
 venue-finder = "venue_finder.main:main"
 
-[tool.vercel]
-entrypoint = "index:handler"
-
 [tool.setuptools]
 packages = {find = {where = ["."], include = ["venue_finder*"]}}
 
