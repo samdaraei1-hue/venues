@@ -9,7 +9,10 @@ from .base import BaseScraper, ScrapedVenue
 class GruppenhausScraper(BaseScraper):
     source_name = "gruppenhaus"
     base_url = "https://www.gruppenhaus.de/"
-    allowed_hrefs = ("-hs",)
+    # The site links to listings mostly via *.html / *.php entries (no "-hs" in href).
+    # Keep this permissive to avoid returning 0 results.
+    allowed_hrefs = (".html", ".php", "/",)
+
 
     def _is_listing_link(self, href: str, text: str) -> bool:
         lowered_text = text.lower()
@@ -22,7 +25,11 @@ class GruppenhausScraper(BaseScraper):
             return False
         if any(token in lowered_text for token in ("impressum", "datenschutz", "kontakt", "agb", "login")):
             return False
-        return bool(re.search(r"\b\d{5}\b", lowered_text))
+        # The homepage/category contains links to listing pages that may not include the full
+        # 5-digit postal code text in the anchor. Return true as long as it looks like a
+        # venue page link.
+        return True
+
 
     def scrape(self) -> list[ScrapedVenue]:
         soup = self.soup_from_url(self.base_url)

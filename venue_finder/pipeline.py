@@ -131,9 +131,25 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
 
 
 def persist_venues(database_url: str, venues: list[Venue]) -> int:
+    """Persist scraped venues.
+
+    Return a count that reflects work done.
+
+    Note: `upsert_venues()` may return `created=False` for two cases:
+    - `updated by source_url` (existing row merged)
+    - `merged duplicate (...)` (similar row merged)
+
+    The UI label "Inserted" previously only counted `created=True`, which
+    often resulted in `0` even when scraping successfully updated records.
+    """
+
     with session_scope(database_url) as session:
         outcomes = upsert_venues(session, venues)
-    return sum(1 for outcome in outcomes if outcome["created"])
+
+    # Count anything except skipped duplicates in the same batch.
+    # This keeps the number meaningful for users.
+    return sum(1 for outcome in outcomes if outcome.get("reason") != "skipped duplicate source_url in batch")
+
 
 
 def export_reports(database_url: str, output_dir: Path) -> tuple[Path, Path]:
