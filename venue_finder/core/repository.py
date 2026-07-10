@@ -249,3 +249,19 @@ def remove_keyword(session: Session, keyword: str) -> list[str]:
         remaining = replace_keywords(session, DEFAULT_SEARCH_KEYWORDS)
     session.flush()
     return remaining
+
+
+def delete_sample_venues(session: Session) -> int:
+    deleted = (
+        session.query(Venue)
+        .filter(
+            or_(
+                Venue.source_name == "demo",
+                Venue.source_name == "manual",
+                Venue.source_url.like("https://example.com/%"),
+            )
+        )
+        .delete(synchronize_session=False)
+    )
+    session.flush()
+    return int(deleted)
