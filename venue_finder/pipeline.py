@@ -19,7 +19,12 @@ except ModuleNotFoundError:  # pragma: no cover
     export_excel = None  # type: ignore
 
 from venue_finder.processors.feature_extractor import extract_feature_flags, extract_quiet_hours
-from venue_finder.processors.capacity_parser import extract_maximum_guests
+from venue_finder.processors.capacity_parser import (
+    extract_camping_capacity,
+    extract_maximum_guests,
+    extract_number_of_beds,
+    extract_number_of_rooms,
+)
 from venue_finder.processors.distance_calculator import calculate_distance
 from venue_finder.processors.location_parser import coordinates_for_city, infer_location_hint
 from venue_finder.processors.text_analyzer import TextAnalyzer
@@ -29,7 +34,9 @@ from venue_finder.scrapers.eventlocations_scraper import EventlocationsScraper
 from venue_finder.scrapers.gruppenhaus_scraper import GruppenhausScraper
 
 
-SCRAPER_CLASSES = [GruppenhausScraper, EventlocationsScraper, AirbnbScraper]
+# Airbnb is intentionally disabled for now because the public markup is too noisy
+# and was producing incorrect locations. Re-enable it once the parser is site-specific.
+SCRAPER_CLASSES = [GruppenhausScraper, EventlocationsScraper]
 
 
 def build_scrapers(*, max_results: int, search_keywords: list[str]) -> list:
@@ -65,6 +72,14 @@ def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, fra
 
     if venue.maximum_guests is None:
         venue.maximum_guests = extract_maximum_guests(text)
+    if venue.number_of_beds is None:
+        venue.number_of_beds = extract_number_of_beds(text)
+    if venue.indoor_sleeping_capacity is None:
+        venue.indoor_sleeping_capacity = venue.number_of_beds or extract_number_of_beds(text)
+    if venue.number_of_rooms is None:
+        venue.number_of_rooms = extract_number_of_rooms(text)
+    if venue.camping_capacity is None:
+        venue.camping_capacity = extract_camping_capacity(text)
 
     feature_flags = extract_feature_flags(text)
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)
@@ -228,6 +243,14 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
 
     if venue.maximum_guests is None:
         venue.maximum_guests = extract_maximum_guests(text)
+    if venue.number_of_beds is None:
+        venue.number_of_beds = extract_number_of_beds(text)
+    if venue.indoor_sleeping_capacity is None:
+        venue.indoor_sleeping_capacity = venue.number_of_beds or extract_number_of_beds(text)
+    if venue.number_of_rooms is None:
+        venue.number_of_rooms = extract_number_of_rooms(text)
+    if venue.camping_capacity is None:
+        venue.camping_capacity = extract_camping_capacity(text)
 
 
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)

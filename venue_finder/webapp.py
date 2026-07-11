@@ -148,6 +148,9 @@ def _render_page(
         guests_html = (
             f"<input type='number' name='maximum_guests' value='{venue.maximum_guests or ''}' />" if is_edit else (str(venue.maximum_guests or ""))
         )
+        beds_html = str(venue.number_of_beds or "")
+        rooms_html = str(venue.number_of_rooms or "")
+        camping_capacity_html = str(venue.camping_capacity or "")
 
         camping_html = (
             "<select name='camping_allowed'>"
@@ -217,6 +220,9 @@ def _render_page(
             f"<td>{source_name_html}</td>"
             f"<td>{city_html}</td>"
             f"<td>{guests_html}</td>"
+            f"<td>{beds_html}</td>"
+            f"<td>{rooms_html}</td>"
+            f"<td>{camping_capacity_html}</td>"
             f"<td>{venue.distance_from_frankfurt_km or ''}</td>"
             f"<td>{camping_html}</td>"
             f"<td>{parties_html}</td>"
@@ -462,7 +468,7 @@ def _render_page(
             <a class="button secondary" href="/api/venues.json?{query_string}">JSON</a>
           </div>
         </form>
-        <p class="small">Tip: run <code>python -m venue_finder.main seed-demo</code> once, then refresh this page to see sample venues.</p>
+        <p class="small">If the table is empty, run a scrape. Demo seed data is intentionally not shown here.</p>
       </div>
     </div>
     <div class="panel" style="margin-bottom:24px;">
@@ -488,6 +494,9 @@ def _render_page(
             <th>Source</th>
             <th>City</th>
             <th>Guests</th>
+            <th>Beds</th>
+            <th>Rooms</th>
+            <th>Camping cap</th>
             <th>Km from Frankfurt</th>
             <th>Camping</th>
             <th>Parties</th>
@@ -500,7 +509,7 @@ def _render_page(
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="15">No venues found. Seed demo data first.</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="18">No venues found. Run scrape to populate the table.</td></tr>'}
 
         </tbody>
       </table>
@@ -524,6 +533,9 @@ def _handle_json(params: dict[str, list[str]]) -> str:
                 "source_url": venue.source_url,
                 "city": venue.city,
                 "maximum_guests": venue.maximum_guests,
+                "number_of_beds": venue.number_of_beds,
+                "number_of_rooms": venue.number_of_rooms,
+                "camping_capacity": venue.camping_capacity,
                 "party_score": venue.party_score,
                 "camping_allowed": venue.camping_allowed,
                 "loud_music_allowed": venue.loud_music_allowed,
@@ -687,22 +699,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         filters = _build_filters(params)
-        seeded_demo = False
         with session_scope(config.database_url) as session:
             seed_default_keywords(session)
             venues = list_venues(session, filters)
 
-            # If DB is empty, seed demo data so the UI isn't blank.
-            if not venues:
-                from venue_finder.pipeline import seed_demo_data  # local import to avoid cycles
-
-                inserted, csv_path, xlsx_path = seed_demo_data()
-                seeded_demo = inserted > 0
-                venues = list_venues(session, filters)
-
             keywords = list_keywords(session)
 
-        body_message = "DB empty: seeded demo venues." if seeded_demo else None
+        body_message = "No venues yet. Run scrape to populate the table." if not venues else None
         body = _render_page(venues, params, keywords, message=body_message).encode("utf-8")
 
         self.send_response(200)

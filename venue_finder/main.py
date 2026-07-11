@@ -37,7 +37,8 @@ def search_venues(args: argparse.Namespace) -> None:
     for venue in venues:
         print(
             f"{venue.id}\t{venue.party_score or 0}\t{venue.name or ''}\t{venue.city or ''}\t"
-            f"{venue.maximum_guests or ''}\t{venue.distance_from_frankfurt_km or ''}\t{venue.source_url}"
+            f"{venue.maximum_guests or ''}\t{venue.number_of_beds or ''}\t{venue.number_of_rooms or ''}\t"
+            f"{venue.camping_capacity or ''}\t{venue.distance_from_frankfurt_km or ''}\t{venue.source_url}"
         )
 
 

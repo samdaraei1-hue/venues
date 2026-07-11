@@ -66,6 +66,8 @@ def apply_filters(query, filters: VenueFilters):
 
 
 def _is_displayable_venue(venue: Venue) -> bool:
+    if venue.source_name == "demo":
+        return False
     if venue.source_name == "gruppenhaus" and venue.source_url:
         lower = venue.source_url.lower()
         if "gruppenhaus.de" in lower and not re.search(r"-hs\d+\.html(?:\?.*)?$", lower):
