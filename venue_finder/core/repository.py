@@ -139,6 +139,42 @@ def _merge_non_null_fields(target: Venue, source: Venue) -> None:
             setattr(target, column, value)
 
 
+def _merge_scraped_fields(target: Venue, source: Venue) -> None:
+    """Merge freshly scraped data and prefer newer structured values.
+
+    Scrapers often get better at extracting names, cities, and capacities over
+    time. For that reason, scraped rows should be allowed to replace older text
+    values instead of only filling empty slots.
+    """
+
+    for column in Venue.__table__.columns.keys():
+        if column in {"id", "created_at", "updated_at", "source_url"}:
+            continue
+
+        value = getattr(source, column, None)
+        if value is None:
+            continue
+
+        if column in {
+            "camping_allowed",
+            "camper_van_allowed",
+            "parties_allowed",
+            "loud_music_allowed",
+            "dj_allowed",
+            "sound_system_available",
+            "outdoor_party_area",
+            "bbq_available",
+            "fire_place",
+            "swimming_pool",
+            "lake_or_river_nearby",
+            "private_property",
+        }:
+            setattr(target, column, bool(getattr(target, column, False) or value))
+            continue
+
+        setattr(target, column, value)
+
+
 def _venue_similarity(left: Venue, right: Venue) -> tuple[bool, str, float]:
     result = detect_duplicate(
         name_a=left.name,
@@ -156,7 +192,7 @@ def _venue_similarity(left: Venue, right: Venue) -> tuple[bool, str, float]:
 def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
     existing = session.scalar(select(Venue).where(Venue.source_url == venue.source_url))
     if existing is not None:
-        _merge_non_null_fields(existing, venue)
+        _merge_scraped_fields(existing, venue)
         return existing, False, "updated by source_url"
 
 
@@ -172,7 +208,7 @@ def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
     for candidate in candidates:
         duplicate, reason, score = _venue_similarity(candidate, venue)
         if duplicate:
-            _merge_non_null_fields(candidate, venue)
+            _merge_scraped_fields(candidate, venue)
             if candidate.party_score is None or (venue.party_score is not None and venue.party_score > candidate.party_score):
                 candidate.party_score = venue.party_score
             return candidate, False, f"merged duplicate ({reason}, {score:.2f})"

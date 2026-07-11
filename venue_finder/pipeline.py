@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import time
+import re
+from urllib.parse import unquote, urlparse
 
 from venue_finder.core.config import AppConfig, get_config
 
@@ -55,7 +57,58 @@ def collect_text(venue: Venue) -> str:
     return " ".join(part for part in parts if part)
 
 
+def _slug_to_name(source_url: str | None, city: str | None = None) -> str | None:
+    if not source_url:
+        return None
+    path = unquote(urlparse(source_url).path).strip("/")
+    if not path:
+        return None
+    slug = path.rsplit("/", 1)[-1]
+    slug = re.sub(r"\.html?$", "", slug, flags=re.IGNORECASE)
+    slug = re.sub(r"-hs\d+$", "", slug, flags=re.IGNORECASE)
+    tokens = [token for token in slug.split("-") if token]
+    if not tokens:
+        return None
+    if city:
+        city_tokens = [token for token in re.split(r"[\s\-]+", city.lower()) if token]
+        while tokens and city_tokens and tokens[-len(city_tokens):] == city_tokens:
+            tokens = tokens[:-len(city_tokens)]
+    tokens = [token for token in tokens if token not in {"de", "deutschland", "germany"}]
+    if not tokens:
+        return None
+    return " ".join(tokens).replace("_", " ").replace("-", " ").title()
+
+
+def _looks_noisy_name(value: str | None) -> bool:
+    if not value:
+        return True
+    lowered = value.lower()
+    return any(
+        token in lowered
+        for token in (
+            "betten",
+            "gruppenräume",
+            "gruppenraeume",
+            "schlafräume",
+            "schlafraeume",
+            "personen",
+            "auf anfrage",
+            "zur suche",
+            "haus vermieten",
+        )
+    ) or lowered.startswith(("ab ", "auf ", "sv ", "vp ")) or len(value) > 80
+
+
+def normalize_scraped_name(venue: Venue) -> None:
+    if venue.source_name in {"demo", "manual"}:
+        return
+    candidate = _slug_to_name(venue.source_url, city=venue.city)
+    if candidate and _looks_noisy_name(venue.name):
+        venue.name = candidate
+
+
 def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, frankfurt_lon: float) -> Venue:
+    normalize_scraped_name(venue)
     text = collect_text(venue)
 
     location_hint = infer_location_hint(name=venue.name, raw_text=venue.raw_text, source_url=venue.source_url)
@@ -236,6 +289,7 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
     """Recompute feature flags + quiet hours + party score for a single venue."""
 
     analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
+    normalize_scraped_name(venue)
 
     # Refresh feature flags + quiet hours from current text.
     text = collect_text(venue)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import re
 from typing import Any
 from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
@@ -103,6 +104,33 @@ class BaseScraper(ABC):
             return None
         cleaned = " ".join(value.split())
         return cleaned or None
+
+    def slug_to_name(self, url: str | None, *, city: str | None = None) -> str | None:
+        if not url:
+            return None
+        path = url.split("?", 1)[0].rstrip("/")
+        slug = path.rsplit("/", 1)[-1]
+        slug = re.sub(r"\.html?$", "", slug, flags=re.IGNORECASE)
+        slug = re.sub(r"-hs\d+$", "", slug, flags=re.IGNORECASE)
+        slug = slug.replace("-deutschland", "").replace("-germany", "")
+        tokens = [token for token in slug.split("-") if token]
+        if not tokens:
+            return None
+
+        if city:
+            city_tokens = [token for token in re.split(r"[\s\-]+", city.lower()) if token]
+            while tokens and city_tokens and tokens[-len(city_tokens):] == city_tokens:
+                tokens = tokens[:-len(city_tokens)]
+
+        if tokens and tokens[-1].isdigit():
+            tokens = tokens[:-1]
+
+        tokens = [token for token in tokens if token not in {"de", "deutschland", "germany"}]
+        if not tokens:
+            return None
+
+        cleaned = " ".join(token.replace("ue", "ü").replace("ae", "ä").replace("oe", "ö") for token in tokens)
+        return cleaned.title()
 
     def limit_results(self, venues: list[ScrapedVenue]) -> list[ScrapedVenue]:
         return venues[: self.max_results]
