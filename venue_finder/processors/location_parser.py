@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import unicodedata
 from urllib.parse import unquote, urlparse
 
 
@@ -52,7 +53,6 @@ CITY_COORDINATES: dict[str, tuple[float, float]] = {
     "offenbach am main": (50.0956, 8.7761),
     "hanau": (50.1218, 8.9283),
     "giessen": (50.584, 8.6784),
-    "gießen": (50.584, 8.6784),
     "marburg": (50.8072, 8.7706),
     "fulda": (50.5558, 9.6808),
     "wetzlar": (50.5617, 8.5044),
@@ -75,6 +75,22 @@ CITY_COORDINATES: dict[str, tuple[float, float]] = {
     "bad zwesten": (51.04, 9.17),
     "greifenstein": (50.6164, 8.2928),
     "hessen": (50.6667, 9.0),
+    "usseln": (51.29, 8.66),
+    "willingen": (51.29, 8.61),
+    "lauterbach": (50.637, 9.394),
+    "ehrenberg rhoen": (50.52, 9.98),
+    "schluchtern": (50.35, 9.53),
+    "schluechtern": (50.35, 9.53),
+    "floersbachtal": (50.12, 9.43),
+    "hessisch lichtenau": (51.2, 9.72),
+    "schmitten": (50.27, 8.44),
+    "hofbieber": (50.58, 9.85),
+    "hammersbach": (50.22, 8.98),
+    "eschwege": (51.19, 10.05),
+    "rosenthal": (50.98, 8.87),
+    "meinhard": (51.21, 10.06),
+    "braunfels": (50.52, 8.39),
+    "muenchhausen": (50.96, 8.72),
 }
 
 
@@ -104,14 +120,12 @@ def _clean_postal(value: str | None) -> str | None:
 def _normalize_key(value: str | None) -> str:
     if not value:
         return ""
-    return (
-        value.strip()
-        .lower()
-        .replace("ä", "a")
-        .replace("ö", "o")
-        .replace("ü", "u")
-        .replace("ß", "ss")
-    )
+    text = value.strip().lower()
+    text = text.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
 
 
 def _city_from_slug(source_url: str | None) -> str | None:
@@ -158,7 +172,6 @@ def infer_location_hint(*, name: str | None = None, raw_text: str | None = None,
         hint.city = _city_from_slug(source_url)
 
     if hint.city is None and raw_text:
-        # Look for strings like "Ort: Mainz" or "Location: Hamburg".
         for pattern in (r"(?:Ort|Location|City|Stadt)\s*[:\-]\s*([A-ZÄÖÜ][^,\n;]+)",):
             match = re.search(pattern, raw_text, re.IGNORECASE)
             if match:

@@ -81,7 +81,7 @@ class BaseScraper(ABC):
             tag.decompose()
         return " ".join(soup.stripped_strings)
 
-    def fetch_html(self, url: str, *, timeout: int = 30) -> str:
+    def fetch_html(self, url: str, *, timeout: int = 10) -> str:
         request = Request(
             url,
             headers={

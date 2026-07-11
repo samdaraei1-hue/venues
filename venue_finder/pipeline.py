@@ -6,11 +6,13 @@ import time
 import re
 from urllib.parse import unquote, urlparse
 
+from sqlalchemy import select
+
 from venue_finder.core.config import AppConfig, get_config
 
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
-from venue_finder.core.repository import list_keywords, list_venues, seed_default_keywords, upsert_venues
+from venue_finder.core.repository import list_keywords, list_venues, seed_default_keywords, upsert_venue, upsert_venues
 # Exports are optional in serverless environments (e.g. Vercel) where writing files
 # may be restricted or some modules may not be bundled correctly.
 try:
@@ -203,10 +205,78 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
                 raw_text=item.raw_text,
                 extra_metadata=item.metadata,
             )
+            metadata = item.metadata or {}
+            if venue.maximum_guests is None and isinstance(metadata.get("maximum_guests"), int):
+                venue.maximum_guests = metadata["maximum_guests"]
+            if venue.number_of_beds is None and isinstance(metadata.get("number_of_beds"), int):
+                venue.number_of_beds = metadata["number_of_beds"]
+            if venue.indoor_sleeping_capacity is None and isinstance(metadata.get("number_of_beds"), int):
+                venue.indoor_sleeping_capacity = metadata["number_of_beds"]
+            if venue.number_of_rooms is None and isinstance(metadata.get("number_of_rooms"), int):
+                venue.number_of_rooms = metadata["number_of_rooms"]
+            if venue.camping_capacity is None and isinstance(metadata.get("camping_capacity"), int):
+                venue.camping_capacity = metadata["camping_capacity"]
+            if venue.city is None and isinstance(metadata.get("city_hint"), str):
+                venue.city = metadata["city_hint"]
+            if venue.postal_code is None and isinstance(metadata.get("postal_code_hint"), str):
+                venue.postal_code = metadata["postal_code_hint"]
+            if metadata.get("camping_allowed") is True:
+                venue.camping_allowed = True
+            if metadata.get("parties_allowed") is True:
+                venue.parties_allowed = True
             enrich_venue(venue, analyzer, config.frankfurt_latitude, config.frankfurt_longitude)
             scraped.append(venue)
 
     return scraped
+
+
+def backfill_gruppenhaus_details(config, analyzer: TextAnalyzer) -> int:
+    scraper = GruppenhausScraper(max_results=config.max_search_results, search_keywords=[])
+    updated = 0
+    with session_scope(config.database_url) as session:
+        rows = list(session.scalars(select(Venue).where(Venue.source_name == "gruppenhaus")).all())
+        for existing in rows:
+            scraped = scraper.build_scraped_venue(
+                source_url=existing.source_url,
+                fallback_text=collect_text(existing),
+                fallback_name=existing.name,
+            )
+            if scraped is None:
+                continue
+
+            venue = Venue(
+                source_name=scraped.source_name,
+                source_url=scraped.source_url,
+                name=scraped.name,
+                website=scraped.website,
+                venue_type=scraped.venue_type,
+                raw_text=scraped.raw_text,
+                extra_metadata=scraped.metadata,
+            )
+            metadata = scraped.metadata or {}
+            if venue.maximum_guests is None and isinstance(metadata.get("maximum_guests"), int):
+                venue.maximum_guests = metadata["maximum_guests"]
+            if venue.number_of_beds is None and isinstance(metadata.get("number_of_beds"), int):
+                venue.number_of_beds = metadata["number_of_beds"]
+            if venue.indoor_sleeping_capacity is None and isinstance(metadata.get("number_of_beds"), int):
+                venue.indoor_sleeping_capacity = metadata["number_of_beds"]
+            if venue.number_of_rooms is None and isinstance(metadata.get("number_of_rooms"), int):
+                venue.number_of_rooms = metadata["number_of_rooms"]
+            if venue.camping_capacity is None and isinstance(metadata.get("camping_capacity"), int):
+                venue.camping_capacity = metadata["camping_capacity"]
+            if venue.city is None and isinstance(metadata.get("city_hint"), str):
+                venue.city = metadata["city_hint"]
+            if venue.postal_code is None and isinstance(metadata.get("postal_code_hint"), str):
+                venue.postal_code = metadata["postal_code_hint"]
+            if metadata.get("camping_allowed") is True:
+                venue.camping_allowed = True
+            if metadata.get("parties_allowed") is True:
+                venue.parties_allowed = True
+
+            enrich_venue(venue, analyzer, config.frankfurt_latitude, config.frankfurt_longitude)
+            upsert_venue(session, venue)
+            updated += 1
+    return updated
 
 
 def persist_venues(database_url: str, venues: list[Venue]) -> int:
@@ -267,19 +337,21 @@ def export_reports(database_url: str, output_dir: Path) -> tuple[Path, Path]:
 def run_once() -> tuple[int, Path, Path]:
     config = get_config()
     init_from_config(config)
+    analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
     with session_scope(config.database_url) as session:
         seed_default_keywords(session)
     venues = scrape_venues(config, use_live_scrapers=True)
     inserted = persist_venues(config.database_url, venues)
+    updated = backfill_gruppenhaus_details(config, analyzer)
     csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
-    return inserted, csv_path, xlsx_path
+    return inserted + updated, csv_path, xlsx_path
 
 
 def run_continuous(interval_minutes: int) -> None:
     delay = max(1, interval_minutes) * 60
     while True:
         inserted, csv_path, xlsx_path = run_once()
-        print(f"Inserted {inserted} new venues")
+        print(f"Processed {inserted} venues")
         print(f"CSV export: {csv_path}")
         print(f"Excel export: {xlsx_path}")
         time.sleep(delay)
