@@ -31,14 +31,14 @@ from venue_finder.processors.distance_calculator import calculate_distance
 from venue_finder.processors.location_parser import coordinates_for_city, infer_location_hint
 from venue_finder.processors.text_analyzer import TextAnalyzer
 from venue_finder.samples import sample_venues
-from venue_finder.scrapers.airbnb_scraper import AirbnbScraper
-from venue_finder.scrapers.eventlocations_scraper import EventlocationsScraper
 from venue_finder.scrapers.gruppenhaus_scraper import GruppenhausScraper
 
 
 # Airbnb is intentionally disabled for now because the public markup is too noisy
 # and was producing incorrect locations. Re-enable it once the parser is site-specific.
-SCRAPER_CLASSES = [GruppenhausScraper, EventlocationsScraper]
+# eventlocations is also disabled for now because it returned non-Germany venue
+# pages and polluted the dataset with wrong cities like Los Angeles.
+SCRAPER_CLASSES = [GruppenhausScraper]
 
 
 def build_scrapers(*, max_results: int, search_keywords: list[str]) -> list:
