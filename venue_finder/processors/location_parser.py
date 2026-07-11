@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
 
 POSTAL_CITY_RE = re.compile(r"\b(?P<postal>\d{5})\s+(?P<city>[A-ZÄÖÜ][^,;/\n]+)", re.UNICODE)
@@ -25,12 +25,12 @@ GENERIC_CITY_TOKENS = {
     "sachsen-anhalt",
     "schleswig-holstein",
     "thueringen",
-    "thüringen",
+    "thuringen",
     "ost",
     "west",
     "nord",
     "sued",
-    "süd",
+    "sud",
     "tagungshaus",
     "seminarhaus",
     "gruppenhaus",
@@ -38,7 +38,43 @@ GENERIC_CITY_TOKENS = {
     "selbstversorgerhaus",
     "ferienhaus",
     "gaestehaus",
-    "gästehaus",
+    "gastehaus",
+}
+
+CITY_COORDINATES: dict[str, tuple[float, float]] = {
+    "frankfurt am main": (50.1109, 8.6821),
+    "frankfurt": (50.1109, 8.6821),
+    "wiesbaden": (50.0826, 8.24),
+    "mainz": (49.9929, 8.2473),
+    "darmstadt": (49.8728, 8.6512),
+    "kassel": (51.3127, 9.4797),
+    "offenbach": (50.0956, 8.7761),
+    "offenbach am main": (50.0956, 8.7761),
+    "hanau": (50.1218, 8.9283),
+    "giessen": (50.584, 8.6784),
+    "gießen": (50.584, 8.6784),
+    "marburg": (50.8072, 8.7706),
+    "fulda": (50.5558, 9.6808),
+    "wetzlar": (50.5617, 8.5044),
+    "bad homburg": (50.2263, 8.6185),
+    "ruesselsheim": (49.991, 8.413),
+    "russelsheim": (49.991, 8.413),
+    "hohenstein": (50.2, 8.04),
+    "hilders": (50.5698, 9.9974),
+    "gersfeld": (50.4517, 9.9124),
+    "breuberg": (49.8247, 9.0345),
+    "alheim": (51.0363, 9.6075),
+    "knullwald": (51.0135, 9.5137),
+    "schotten": (50.5032, 9.1255),
+    "dornburg": (50.5159, 8.0162),
+    "schenklengsfeld": (50.8186, 9.8468),
+    "oberzent": (49.557, 8.956),
+    "homberg": (51.03, 9.4),
+    "huenfelden": (50.33, 8.15),
+    "huenfeld": (50.5667, 9.7),
+    "bad zwesten": (51.04, 9.17),
+    "greifenstein": (50.6164, 8.2928),
+    "hessen": (50.6667, 9.0),
 }
 
 
@@ -63,6 +99,19 @@ def _clean_postal(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value if re.fullmatch(r"\d{5}", value) else None
+
+
+def _normalize_key(value: str | None) -> str:
+    if not value:
+        return ""
+    return (
+        value.strip()
+        .lower()
+        .replace("ä", "a")
+        .replace("ö", "o")
+        .replace("ü", "u")
+        .replace("ß", "ss")
+    )
 
 
 def _city_from_slug(source_url: str | None) -> str | None:
@@ -122,3 +171,8 @@ def infer_location_hint(*, name: str | None = None, raw_text: str | None = None,
         hint.country = "Germany"
 
     return hint
+
+
+def coordinates_for_city(city: str | None) -> tuple[float, float] | None:
+    key = _normalize_key(city)
+    return CITY_COORDINATES.get(key)

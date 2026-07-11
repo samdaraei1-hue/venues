@@ -38,9 +38,7 @@ class GruppenhausScraper(BaseScraper):
             return False
         if any(token in lowered_text for token in ("impressum", "datenschutz", "kontakt", "agb", "login")):
             return False
-        if bool(re.search(r"-hs\d+\.html(?:\?.*)?$", lowered_href)):
-            return True
-        return ".html" in lowered_href and any(token in lowered_text for token in self.venue_signals)
+        return bool(re.search(r"-hs\d+\.html(?:\?.*)?$", lowered_href))
 
 
     def scrape(self) -> list[ScrapedVenue]:
@@ -67,7 +65,7 @@ class GruppenhausScraper(BaseScraper):
                 card = anchor.find_parent(["li", "article", "div"]) or anchor.parent
                 raw_text = self.first_text(card.get_text(" ", strip=True) if card else text) or text
                 lowered = raw_text.lower()
-                if not any(token in lowered for token in self.venue_signals):
+                if not any(token in lowered for token in self.venue_signals) and not re.search(r"\b(?:betten|personen|gruppenzimmer|schlafräume|schlafraeume)\b", lowered):
                     continue
 
                 source_url = urljoin(page_url, href)

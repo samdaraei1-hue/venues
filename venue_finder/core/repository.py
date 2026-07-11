@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Iterable
 
 from sqlalchemy import or_, select
@@ -64,11 +65,20 @@ def apply_filters(query, filters: VenueFilters):
     return query
 
 
+def _is_displayable_venue(venue: Venue) -> bool:
+    if venue.source_name == "gruppenhaus" and venue.source_url:
+        lower = venue.source_url.lower()
+        if "gruppenhaus.de" in lower and not re.search(r"-hs\d+\.html(?:\?.*)?$", lower):
+            return False
+    return True
+
+
 def list_venues(session: Session, filters: VenueFilters | None = None) -> list[Venue]:
     query = select(Venue).order_by(Venue.party_score.desc().nullslast(), Venue.id.asc())
     if filters is not None:
         query = apply_filters(query, filters)
-    return list(session.scalars(query).all())
+    venues = list(session.scalars(query).all())
+    return [venue for venue in venues if _is_displayable_venue(venue)]
 
 
 def get_venue_by_id(session: Session, venue_id: int) -> Venue | None:

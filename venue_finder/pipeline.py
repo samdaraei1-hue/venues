@@ -19,8 +19,9 @@ except ModuleNotFoundError:  # pragma: no cover
     export_excel = None  # type: ignore
 
 from venue_finder.processors.feature_extractor import extract_feature_flags, extract_quiet_hours
+from venue_finder.processors.capacity_parser import extract_maximum_guests
 from venue_finder.processors.distance_calculator import calculate_distance
-from venue_finder.processors.location_parser import infer_location_hint
+from venue_finder.processors.location_parser import coordinates_for_city, infer_location_hint
 from venue_finder.processors.text_analyzer import TextAnalyzer
 from venue_finder.samples import sample_venues
 from venue_finder.scrapers.airbnb_scraper import AirbnbScraper
@@ -62,6 +63,9 @@ def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, fra
     if venue.country is None:
         venue.country = location_hint.country
 
+    if venue.maximum_guests is None:
+        venue.maximum_guests = extract_maximum_guests(text)
+
     feature_flags = extract_feature_flags(text)
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)
     venue.parties_allowed = venue.parties_allowed or feature_flags.get("parties_allowed", False)
@@ -97,6 +101,13 @@ def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, fra
         distance = calculate_distance(frankfurt_lat, frankfurt_lon, venue.latitude, venue.longitude)
         venue.distance_from_frankfurt_km = distance.distance_km
         venue.driving_time_minutes = distance.driving_time_minutes
+    elif venue.distance_from_frankfurt_km is None and venue.city is not None:
+        city_coords = coordinates_for_city(venue.city)
+        if city_coords is not None:
+            venue.latitude, venue.longitude = city_coords
+            distance = calculate_distance(frankfurt_lat, frankfurt_lon, venue.latitude, venue.longitude)
+            venue.distance_from_frankfurt_km = distance.distance_km
+            venue.driving_time_minutes = distance.driving_time_minutes
 
     return venue
 
@@ -215,6 +226,9 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
     text = collect_text(venue)
     feature_flags = extract_feature_flags(text)
 
+    if venue.maximum_guests is None:
+        venue.maximum_guests = extract_maximum_guests(text)
+
 
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)
 
@@ -258,6 +272,13 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
         distance = calculate_distance(config.frankfurt_latitude, config.frankfurt_longitude, venue.latitude, venue.longitude)
         venue.distance_from_frankfurt_km = distance.distance_km
         venue.driving_time_minutes = distance.driving_time_minutes
+    elif venue.distance_from_frankfurt_km is None and venue.city is not None:
+        city_coords = coordinates_for_city(venue.city)
+        if city_coords is not None:
+            venue.latitude, venue.longitude = city_coords
+            distance = calculate_distance(config.frankfurt_latitude, config.frankfurt_longitude, venue.latitude, venue.longitude)
+            venue.distance_from_frankfurt_km = distance.distance_km
+            venue.driving_time_minutes = distance.driving_time_minutes
 
     return venue
 
@@ -274,4 +295,3 @@ def seed_demo_data() -> tuple[int, Path, Path]:
     inserted = persist_venues(config.database_url, venues)
     csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
     return inserted, csv_path, xlsx_path
-
