@@ -51,6 +51,17 @@ class BaseScraper(ABC):
             return []
         return [self.search_url_for_keyword(keyword) for keyword in self.search_keywords]
 
+    def iter_search_pages(self) -> list[tuple[str, str]]:
+        """Return the keyword and URL pair used for discovery.
+
+        Site-specific scrapers can iterate these pages and fall back to the
+        source homepage if a search URL does not exist or returns nothing.
+        """
+
+        if self.base_url is None:
+            return []
+        return [(keyword, self.search_url_for_keyword(keyword)) for keyword in self.search_keywords]
+
     def search_url_for_keyword(self, keyword: str) -> str:
         if self.base_url is None:
             return keyword
