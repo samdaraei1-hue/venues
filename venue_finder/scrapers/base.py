@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import re
+from pathlib import Path
+import shutil
 from typing import Any
 from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
@@ -81,7 +83,75 @@ class BaseScraper(ABC):
             tag.decompose()
         return " ".join(soup.stripped_strings)
 
+    def _browser_executable_candidates(self) -> list[str]:
+        candidates = [
+            shutil.which("chrome.exe"),
+            shutil.which("msedge.exe"),
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ]
+        return [candidate for candidate in candidates if candidate and Path(candidate).exists()]
+
+    def _fetch_html_with_playwright(self, url: str, *, timeout: int = 10) -> str:
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            return ""
+
+        last_error: Exception | None = None
+        with sync_playwright() as p:
+            executable_candidates = self._browser_executable_candidates()
+            launch_kwargs: dict[str, Any] = {
+                "headless": True,
+                "args": [
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-dev-shm-usage",
+                ],
+            }
+
+            for executable_path in executable_candidates or [None]:
+                try:
+                    if executable_path:
+                        launch_kwargs["executable_path"] = executable_path
+                    else:
+                        launch_kwargs.pop("executable_path", None)
+
+                    browser = p.chromium.launch(**launch_kwargs)
+                    context = browser.new_context(
+                        locale="de-DE",
+                        java_script_enabled=True,
+                        ignore_https_errors=True,
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+                        ),
+                    )
+                    page = context.new_page()
+                    page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=timeout * 1000)
+                    except Exception:
+                        pass
+                    html = page.content()
+                    context.close()
+                    browser.close()
+                    return html
+                except Exception as exc:  # pragma: no cover - browser/network dependent
+                    last_error = exc
+                    continue
+
+        if last_error is not None:
+            return ""
+        return ""
+
     def fetch_html(self, url: str, *, timeout: int = 10) -> str:
+        html = self._fetch_html_with_playwright(url, timeout=timeout)
+        if html:
+            return html
+
         request = Request(
             url,
             headers={

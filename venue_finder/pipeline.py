@@ -6,7 +6,7 @@ import time
 import re
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from venue_finder.core.config import AppConfig, get_config
 
@@ -234,7 +234,20 @@ def backfill_gruppenhaus_details(config, analyzer: TextAnalyzer) -> int:
     scraper = GruppenhausScraper(max_results=config.max_search_results, search_keywords=[])
     updated = 0
     with session_scope(config.database_url) as session:
-        rows = list(session.scalars(select(Venue).where(Venue.source_name == "gruppenhaus")).all())
+        rows = list(
+            session.scalars(
+                select(Venue).where(
+                    Venue.source_name == "gruppenhaus",
+                    or_(
+                        Venue.maximum_guests.is_(None),
+                        Venue.number_of_beds.is_(None),
+                        Venue.number_of_rooms.is_(None),
+                        Venue.camping_capacity.is_(None),
+                        Venue.distance_from_frankfurt_km.is_(None),
+                    ),
+                )
+            ).all()
+        )
         for existing in rows:
             scraped = scraper.build_scraped_venue(
                 source_url=existing.source_url,
@@ -337,14 +350,12 @@ def export_reports(database_url: str, output_dir: Path) -> tuple[Path, Path]:
 def run_once() -> tuple[int, Path, Path]:
     config = get_config()
     init_from_config(config)
-    analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
     with session_scope(config.database_url) as session:
         seed_default_keywords(session)
     venues = scrape_venues(config, use_live_scrapers=True)
     inserted = persist_venues(config.database_url, venues)
-    updated = backfill_gruppenhaus_details(config, analyzer)
     csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
-    return inserted + updated, csv_path, xlsx_path
+    return inserted, csv_path, xlsx_path
 
 
 def run_continuous(interval_minutes: int) -> None:
