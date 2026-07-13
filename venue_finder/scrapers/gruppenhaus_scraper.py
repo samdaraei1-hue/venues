@@ -91,6 +91,68 @@ class GruppenhausScraper(BaseScraper):
         lowered = text.lower()
         return any(term in lowered for term in ("private feiern", "familienfeiern", "feiern", "party", "fest", "veranstaltung"))
 
+    def _listing_candidates(self, soup: BeautifulSoup) -> list[tuple[str, str, str]]:
+        candidates: list[tuple[str, str, str]] = []
+        for anchor in soup.select("a[href]"):
+            text = self.first_text(anchor.get_text(" ", strip=True))
+            href = anchor.get("href")
+            if not text or not href or not self._is_listing_link(href, text):
+                continue
+            card = anchor.find_parent(["li", "article", "div"]) or anchor.parent
+            card_text = self.first_text(card.get_text(" ", strip=True) if card else text) or text
+            candidates.append((text, href, card_text))
+        return candidates
+
+    def _paginated_listing_candidates(self, page_url: str) -> list[tuple[str, str, str]]:
+        """Read every JavaScript pagination page from Gruppenhaus results."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            soup = self.soup_from_url(page_url)
+            return self._listing_candidates(soup) if soup else []
+
+        candidates: list[tuple[str, str, str]] = []
+        seen_pages: set[str] = set()
+        try:
+            with sync_playwright() as p:
+                launch_kwargs = {"headless": True, "args": ["--disable-gpu", "--disable-dev-shm-usage"]}
+                executable_paths = self._browser_executable_candidates() or [None]
+                browser = None
+                for executable_path in executable_paths:
+                    try:
+                        if executable_path:
+                            launch_kwargs["executable_path"] = executable_path
+                        else:
+                            launch_kwargs.pop("executable_path", None)
+                        browser = p.chromium.launch(**launch_kwargs)
+                        break
+                    except Exception:
+                        continue
+                if browser is None:
+                    return []
+
+                page = browser.new_page()
+                page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
+                for _ in range(20):  # safety limit for unexpected pagination loops
+                    active = page.locator("#compact-pagination .active").inner_text() if page.locator("#compact-pagination .active").count() else "1"
+                    if active in seen_pages:
+                        break
+                    seen_pages.add(active)
+                    candidates.extend(self._listing_candidates(BeautifulSoup(page.content(), "html.parser")))
+
+                    next_link = page.locator("#compact-pagination a.next")
+                    if not next_link.count():
+                        break
+                    target = next_link.get_attribute("href") or ""
+                    if not target.startswith("#page-"):
+                        break
+                    next_link.click()
+                    page.wait_for_timeout(500)
+                browser.close()
+        except Exception:
+            return candidates
+        return candidates
+
     def build_scraped_venue(
         self,
         *,
@@ -177,18 +239,7 @@ class GruppenhausScraper(BaseScraper):
         candidate_pages = self.iter_search_pages() or [("", self.base_url)]
 
         for keyword, page_url in candidate_pages:
-            soup = self.soup_from_url(page_url)
-            if not soup:
-                continue
-
-            for anchor in soup.select("a[href]"):
-                text = self.first_text(anchor.get_text(" ", strip=True))
-                href = anchor.get("href")
-                if not text or not href:
-                    continue
-
-                if not self._is_listing_link(href, text):
-                    continue
+            for text, href, card_text in self._paginated_listing_candidates(page_url):
 
                 source_url = urljoin(page_url, href)
                 if source_url.rstrip("/") in {self.base_url.rstrip("/"), "https://www.gruppenhaus.de"}:
@@ -197,8 +248,6 @@ class GruppenhausScraper(BaseScraper):
                     continue
                 seen.add(source_url)
 
-                card = anchor.find_parent(["li", "article", "div"]) or anchor.parent
-                card_text = self.first_text(card.get_text(" ", strip=True) if card else text) or text
                 scraped = self.build_scraped_venue(
                     source_url=source_url,
                     keyword=keyword,
