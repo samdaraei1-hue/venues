@@ -245,6 +245,10 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
                 venue.city = metadata["city_hint"]
             if venue.postal_code is None and isinstance(metadata.get("postal_code_hint"), str):
                 venue.postal_code = metadata["postal_code_hint"]
+            if venue.latitude is None and isinstance(metadata.get("latitude"), (int, float)):
+                venue.latitude = float(metadata["latitude"])
+            if venue.longitude is None and isinstance(metadata.get("longitude"), (int, float)):
+                venue.longitude = float(metadata["longitude"])
             if metadata.get("camping_allowed") is True:
                 venue.camping_allowed = True
             if metadata.get("parties_allowed") is True:
@@ -310,6 +314,10 @@ def backfill_gruppenhaus_details(config, analyzer: TextAnalyzer) -> int:
                 venue.city = metadata["city_hint"]
             if venue.postal_code is None and isinstance(metadata.get("postal_code_hint"), str):
                 venue.postal_code = metadata["postal_code_hint"]
+            if venue.latitude is None and isinstance(metadata.get("latitude"), (int, float)):
+                venue.latitude = float(metadata["latitude"])
+            if venue.longitude is None and isinstance(metadata.get("longitude"), (int, float)):
+                venue.longitude = float(metadata["longitude"])
             if metadata.get("camping_allowed") is True:
                 venue.camping_allowed = True
             if metadata.get("parties_allowed") is True:

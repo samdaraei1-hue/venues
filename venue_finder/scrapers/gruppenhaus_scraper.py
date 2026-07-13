@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from urllib.parse import quote_plus, unquote, urljoin, urlparse
 
+from bs4 import BeautifulSoup
+
 from venue_finder.processors.capacity_parser import (
     extract_camping_capacity,
     extract_maximum_guests,
@@ -59,17 +61,31 @@ class GruppenhausScraper(BaseScraper):
             return False
         return bool(re.search(r"-hs\d+\.html(?:\?.*)?$", lowered_href))
 
-    def _fetch_detail_text(self, url: str) -> str:
+    def _fetch_detail_data(self, url: str) -> tuple[str, float | None, float | None]:
         html = self.fetch_html(url)
         if not html:
-            return ""
+            return "", None, None
+        soup = BeautifulSoup(html, "html.parser")
+
+        def meta_coordinate(*names: str) -> float | None:
+            for name in names:
+                tag = soup.find("meta", attrs={"name": name}) or soup.find("meta", attrs={"property": name}) or soup.find("meta", attrs={"itemprop": name})
+                if tag and tag.get("content"):
+                    try:
+                        return float(tag["content"])
+                    except (TypeError, ValueError):
+                        continue
+            return None
+
+        latitude = meta_coordinate("latitude", "place:location:latitude")
+        longitude = meta_coordinate("longitude", "place:location:longitude")
         text = self.extract_text(html)
         # Similar-properties widgets append unrelated houses (including their
         # camping labels) to the page text after the actual venue details.
         for marker in ("hnliche Objekte", "hnliche H", "Gruppenhaus Home"):
             if marker in text:
                 text = text.split(marker, 1)[0]
-        return text
+        return text, latitude, longitude
 
     def _is_party_friendly(self, text: str) -> bool:
         lowered = text.lower()
@@ -84,7 +100,7 @@ class GruppenhausScraper(BaseScraper):
         fallback_text: str | None = None,
         fallback_name: str | None = None,
     ) -> ScrapedVenue | None:
-        detail_text = self._fetch_detail_text(source_url)
+        detail_text, latitude, longitude = self._fetch_detail_data(source_url)
         combined_text = "\n".join(part for part in (fallback_text, detail_text) if part)
         if not combined_text:
             return None
@@ -149,6 +165,8 @@ class GruppenhausScraper(BaseScraper):
                 "parties_allowed": parties_allowed,
                 "city_hint": location_hint.city,
                 "postal_code_hint": location_hint.postal_code,
+                "latitude": latitude,
+                "longitude": longitude,
             },
         )
 

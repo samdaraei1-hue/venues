@@ -154,8 +154,8 @@ def scrape_now():
         return redirect(f"/?message={urlencode({'m': message})[2:]}")
 
     try:
-        run_once()
-        message = "Scrape finished."
+        processed, _, _ = run_once()
+        message = f"Scrape finished: {processed} venues inserted or refreshed."
     except Exception as exc:  # noqa: BLE001
         message = f"Scrape failed: {exc}"
     return redirect(f"/?message={urlencode({'m': message})[2:]}")

@@ -646,8 +646,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/scrape-now":
-            run_once()
-            self._redirect("/")
+            processed, _, _ = run_once()
+            self._redirect("/?message=" + urlencode({"m": f"Scrape finished: {processed} venues inserted or refreshed."}))
             return
 
         if parsed.path == "/venues/delete":
