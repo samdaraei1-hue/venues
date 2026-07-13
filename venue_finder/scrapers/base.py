@@ -149,7 +149,7 @@ class BaseScraper(ABC):
             return ""
         return ""
 
-    def _fetch_html_with_request(self, url: str, *, timeout: int = 10) -> str:
+    def _fetch_html_with_request(self, url: str, *, timeout: int = 10, attempts: int = 2) -> str:
         request = Request(
             url,
             headers={
@@ -158,11 +158,15 @@ class BaseScraper(ABC):
                 "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
             },
         )
-        try:
-            with urlopen(request, timeout=timeout) as response:  # noqa: S310 - trusted venue sources only
-                return response.read().decode("utf-8", errors="replace")
-        except Exception:
-            return ""
+        # One transient upstream failure must not silently drop a listing from
+        # an otherwise successful scrape. Keep the retry small for serverless.
+        for _ in range(max(1, attempts)):
+            try:
+                with urlopen(request, timeout=timeout) as response:  # noqa: S310 - trusted venue sources only
+                    return response.read().decode("utf-8", errors="replace")
+            except Exception:
+                continue
+        return ""
 
     def fetch_html(self, url: str, *, timeout: int = 10, prefer_browser: bool = True) -> str:
         if prefer_browser:
