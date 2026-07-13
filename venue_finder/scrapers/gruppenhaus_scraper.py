@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import quote_plus, unquote, urljoin, urlparse
 
 from venue_finder.processors.capacity_parser import (
     extract_camping_capacity,
@@ -39,8 +39,12 @@ def _slug_to_name(source_url: str, city: str | None = None) -> str | None:
 
 class GruppenhausScraper(BaseScraper):
     source_name = "gruppenhaus"
-    base_url = "https://www.gruppenhaus.de/"
+    base_url = "https://www.gruppenhaus.de/uebersicht.php"
     allowed_hrefs = (".html",)
+
+    def search_url_for_keyword(self, keyword: str) -> str:
+        """Use Gruppenhaus' real results page, not the homepage query string."""
+        return f"{self.base_url}?q={quote_plus(keyword)}"
 
     def _is_listing_link(self, href: str, text: str) -> bool:
         lowered_text = text.lower()
@@ -147,7 +151,6 @@ class GruppenhausScraper(BaseScraper):
         seen: set[str] = set()
 
         candidate_pages = self.iter_search_pages() or [("", self.base_url)]
-        candidate_pages.append(("", self.base_url))
 
         for keyword, page_url in candidate_pages:
             soup = self.soup_from_url(page_url)
@@ -181,5 +184,7 @@ class GruppenhausScraper(BaseScraper):
                 )
                 if scraped is not None:
                     venues.append(scraped)
+                    if len(venues) >= self.max_results:
+                        return venues
 
         return self.limit_results(venues)

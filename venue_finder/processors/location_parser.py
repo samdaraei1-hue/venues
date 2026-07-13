@@ -139,10 +139,20 @@ def _city_from_slug(source_url: str | None) -> str | None:
     if "-" not in slug:
         return None
     slug = slug.rsplit(".", 1)[0]
+    # Gruppenhaus URLs end in `-city-name-hs1234`.  Strip the listing ID
+    # before reading the city; otherwise the last token is only a number.
+    slug = re.sub(r"-hs\d+$", "", slug, flags=re.IGNORECASE)
     slug = slug.replace("-hs", "-").replace("-de", "-")
     parts = [part for part in slug.split("-") if part]
     if not parts:
         return None
+    # Prefer a known multi-word city at the end of the slug.  This handles
+    # URLs such as `...-frankfurt-frankfurt-am-main-hs3026` correctly.
+    for length in range(min(4, len(parts)), 1, -1):
+        candidate = " ".join(parts[-length:])
+        if coordinates_for_city(candidate) is not None:
+            return _clean_city(candidate)
+
     tail = parts[-1]
     if tail.isdigit():
         return None
