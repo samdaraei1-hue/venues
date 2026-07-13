@@ -33,6 +33,7 @@ from venue_finder.core.repository import (
 
 from venue_finder.pipeline import recalculate_scores, run_continuous, run_once
 from venue_finder.core.models import Venue
+from venue_finder.core.search_area import SearchArea, get_search_area, save_search_area
 
 
 import threading
@@ -151,11 +152,12 @@ def _render_page(
     params: dict[str, list[str]],
     keywords: list[str],
     sources,
+    search_area: SearchArea | None = None,
     message: str | None = None,
     edit_id: int | None = None,
     add_defaults: dict[str, str] | None = None,
 ) -> str:
-
+    search_area = search_area or SearchArea()
     filters = _build_filters(params)
     total = len(venues)
     avg_score = round(sum((venue.party_score or 0) for venue in venues) / total, 1) if total else 0
@@ -501,6 +503,15 @@ def _render_page(
       </div>
     </div>
     <div class="panel" style="margin-bottom:24px;">
+      <h2 style="margin-top:0;">Search area</h2>
+      <p class="small">Only venues with a resolved location inside this radius are saved.</p>
+      <form method="post" action="/search-area" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div class="field" style="min-width:260px;flex:1;"><label>Starting city</label><input type="text" name="city" value="{escape(search_area.city)}" placeholder="e.g. Frankfurt am Main"></div>
+        <div class="field" style="min-width:160px;"><label>Radius (km)</label><input type="number" min="1" step="1" name="radius_km" value="{search_area.radius_km:g}"></div>
+        <button class="button primary" type="submit">Save search area</button>
+      </form>
+    </div>
+    <div class="panel" style="margin-bottom:24px;">
       <h2 style="margin-top:0;">Search keywords</h2>
       <p class="small">These keywords are used by the scrapers on the next run.</p>
       <div class="chips" style="margin-bottom:12px;">{_render_keyword_pills(keywords)}</div>
@@ -541,7 +552,7 @@ def _render_page(
             <th>Beds</th>
             <th>Rooms</th>
             <th>Camping cap</th>
-            <th>Km from Frankfurt</th>
+            <th>Km from {escape(search_area.city)}</th>
             <th>Camping</th>
             <th>Parties</th>
             <th>BBQ</th>
@@ -617,6 +628,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 with session_scope(config.database_url) as session:
                     seed_default_keywords(session)
                     add_keyword(session, keyword)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/search-area":
+            city = (form.get("city") or [""])[0]
+            try:
+                radius_km = float((form.get("radius_km") or ["250"])[0])
+                with session_scope(config.database_url) as session:
+                    save_search_area(session, city, radius_km)
+            except (ValueError, OSError) as exc:
+                self._redirect("/?message=" + urlencode({"m": str(exc)}))
+                return
             self._redirect("/")
             return
 
@@ -772,13 +795,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         filters = _build_filters(params)
         with session_scope(config.database_url) as session:
             seed_default_keywords(session)
+            search_area = get_search_area(session)
+            if filters.max_distance_km is None:
+                filters.max_distance_km = search_area.radius_km
             venues = list_venues(session, filters)
 
             keywords = list_keywords(session)
         sources = list_sources(config.sources_file)
 
         body_message = "No venues yet. Run scrape to populate the table." if not venues else None
-        body = _render_page(venues, params, keywords, sources, message=body_message).encode("utf-8")
+        body = _render_page(venues, params, keywords, sources, search_area, message=body_message).encode("utf-8")
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

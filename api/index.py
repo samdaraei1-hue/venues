@@ -22,6 +22,7 @@ from venue_finder.core.config import get_config  # noqa: E402
 from venue_finder.core.database import init_from_config, session_scope  # noqa: E402
 from venue_finder.core.keywords import DEFAULT_SEARCH_KEYWORDS  # noqa: E402
 from venue_finder.core.models import Venue  # noqa: E402
+from venue_finder.core.search_area import SearchArea, get_search_area, save_search_area  # noqa: E402
 from venue_finder.core.sources import (  # noqa: E402
     add_source,
     list_sources,
@@ -113,18 +114,22 @@ def dashboard():
             params,
             [],
             list_sources(config.sources_file),
+            SearchArea(),
             message=(message or db_error or "Database error"),
         )
 
     with session_scope(config.database_url) as session:
         seed_default_keywords(session)
+        search_area = get_search_area(session)
+        if filters.max_distance_km is None:
+            filters.max_distance_km = search_area.radius_km
         venues = list_venues(session, filters)
 
         keywords = list_keywords(session)
 
     sources = list_sources(config.sources_file)
     body_message = message or ("No venues yet. Run scrape to populate the table." if not venues else None)
-    return _render_page(venues, params, keywords, sources, message=body_message)
+    return _render_page(venues, params, keywords, sources, search_area, message=body_message)
 
 
 
@@ -194,6 +199,21 @@ def keywords_reset():
     config = get_config()
     with session_scope(config.database_url) as session:
         replace_keywords(session, DEFAULT_SEARCH_KEYWORDS)
+    return redirect("/")
+
+
+@app.route("/search-area", methods=["POST"])
+def search_area():
+    ok, db_error = _bootstrap()
+    if not ok:
+        return redirect(f"/?message={urlencode({'m': db_error or 'Database error'})[2:]}")
+    city = (request.form.get("city") or "").strip()
+    try:
+        radius_km = float(request.form.get("radius_km") or "250")
+        with session_scope(get_config().database_url) as session:
+            save_search_area(session, city, radius_km)
+    except (ValueError, OSError) as exc:
+        return redirect(f"/?message={urlencode({'m': str(exc)})[2:]}")
     return redirect("/")
 
 

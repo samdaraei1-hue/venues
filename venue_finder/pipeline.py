@@ -14,6 +14,7 @@ from venue_finder.core.sources import DEFAULT_SOURCES, list_sources, reset_defau
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
 from venue_finder.core.repository import list_keywords, list_venues, seed_default_keywords, upsert_venue, upsert_venues
+from venue_finder.core.search_area import get_search_area
 # Exports are optional in serverless environments (e.g. Vercel) where writing files
 # may be restricted or some modules may not be bundled correctly.
 try:
@@ -202,6 +203,8 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
         keywords = list_keywords(session)
         if not keywords:
             keywords = seed_default_keywords(session)
+        search_area = get_search_area(session)
+    keywords = list(dict.fromkeys([search_area.city, *keywords]))
     sources = list_sources(config.sources_file)
     enabled_sources = [entry.source_name for entry in sources if entry.enabled and entry.source_name in SCRAPER_CLASS_MAP]
     if not enabled_sources:
@@ -238,7 +241,11 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
                 venue.camping_allowed = True
             if metadata.get("parties_allowed") is True:
                 venue.parties_allowed = True
-            enrich_venue(venue, analyzer, config.frankfurt_latitude, config.frankfurt_longitude)
+            enrich_venue(venue, analyzer, search_area.latitude, search_area.longitude)
+            # Keep only real, local results. Global links without a resolvable
+            # location must never make it into the user's database.
+            if venue.distance_from_frankfurt_km is None or venue.distance_from_frankfurt_km > search_area.radius_km:
+                continue
             scraped.append(venue)
 
     return scraped
