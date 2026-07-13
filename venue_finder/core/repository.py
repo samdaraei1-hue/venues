@@ -197,25 +197,8 @@ def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
     if existing is not None:
         _merge_scraped_fields(existing, venue)
         return existing, False, "updated by source_url"
-
-
-    candidates = session.scalars(
-        select(Venue).where(
-            or_(
-                Venue.street_address.isnot(None),
-                Venue.name.isnot(None),
-                Venue.latitude.isnot(None),
-            )
-        )
-    ).all()
-    for candidate in candidates:
-        duplicate, reason, score = _venue_similarity(candidate, venue)
-        if duplicate:
-            _merge_scraped_fields(candidate, venue)
-            if candidate.party_score is None or (venue.party_score is not None and venue.party_score > candidate.party_score):
-                candidate.party_score = venue.party_score
-            return candidate, False, f"merged duplicate ({reason}, {score:.2f})"
-
+    # Each source URL is an individual listing. Name-based merging incorrectly
+    # collapsed distinct venues such as different Jugendherberge locations.
     session.add(venue)
     return venue, True, "inserted"
 
