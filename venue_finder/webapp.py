@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 import json
 import webbrowser
+from uuid import uuid4
 
 from venue_finder.core.config import get_config
 from venue_finder.core.database import init_from_config, session_scope
@@ -255,6 +256,8 @@ def _render_page(
             f"<td>{rooms_html}</td>"
             f"<td>{camping_capacity_html}</td>"
             f"<td>{venue.distance_from_frankfurt_km or ''}</td>"
+            f"<td>{venue.price_per_night or ''}</td>"
+            f"<td>{venue.price_per_person or ''}</td>"
             f"<td>{camping_html}</td>"
             f"<td>{parties_html}</td>"
             f"<td>{bbq_html}</td>"
@@ -539,6 +542,22 @@ def _render_page(
         <a class="button secondary" href="/sources/reset">Reset defaults</a>
       </form>
     </div>
+    <div class="panel" style="margin-bottom:24px;">
+      <h2 style="margin-top:0;">Add venue manually</h2>
+      <form method="post" action="/venues/add">
+        <div class="grid">
+          <div class="field"><label>Name</label><input name="name" required></div>
+          <div class="field"><label>City</label><input name="city" required></div>
+          <div class="field"><label>Source link</label><input name="source_url" type="url"></div>
+          <div class="field"><label>Guests</label><input name="maximum_guests" type="number"></div>
+          <div class="field"><label>Beds</label><input name="number_of_beds" type="number"></div>
+          <div class="field"><label>Rooms</label><input name="number_of_rooms" type="number"></div>
+          <div class="field"><label>EUR per night</label><input name="price_per_night" type="number" step="0.01"></div>
+          <div class="field"><label>EUR per person</label><input name="price_per_person" type="number" step="0.01"></div>
+        </div>
+        <div class="actions" style="margin-top:12px;"><button class="button primary" type="submit">Add venue</button></div>
+      </form>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -553,6 +572,8 @@ def _render_page(
             <th>Rooms</th>
             <th>Camping cap</th>
             <th>Km from {escape(search_area.city)}</th>
+            <th>EUR/night</th>
+            <th>EUR/person</th>
             <th>Camping</th>
             <th>Parties</th>
             <th>BBQ</th>
@@ -564,7 +585,7 @@ def _render_page(
           </tr>
         </thead>
         <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="18">No venues found. Run scrape to populate the table.</td></tr>'}
+          {''.join(rows) if rows else '<tr><td colspan="20">No venues found. Run scrape to populate the table.</td></tr>'}
 
         </tbody>
       </table>
@@ -675,9 +696,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             with session_scope(config.database_url) as session:
                 venue = Venue(
                     name=_get_form_str(form, "name"),
-                    source_name=_get_form_str(form, "source_name"),
+                    source_name=_get_form_str(form, "source_name") or "manual",
                     city=_get_form_str(form, "city"),
                     maximum_guests=_get_form_int(form, "maximum_guests"),
+                    number_of_beds=_get_form_int(form, "number_of_beds"),
+                    number_of_rooms=_get_form_int(form, "number_of_rooms"),
+                    price_per_night=_get_form_float(form, "price_per_night"),
+                    price_per_person=_get_form_float(form, "price_per_person"),
                     camping_allowed=_get_form_bool(form, "camping_allowed"),
                     parties_allowed=_get_form_bool(form, "parties_allowed"),
                     bbq_available=_get_form_bool(form, "bbq_available"),
@@ -689,7 +714,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     restrictions_summary=None,
                     website=None,
                     venue_type=None,
-                    source_url=_get_form_str(form, "source_url") or "manual://unknown",
+                    source_url=_get_form_str(form, "source_url") or f"manual://{uuid4().hex}",
                     street_address=None,
                     latitude=_get_form_float(form, "latitude"),
                     longitude=_get_form_float(form, "longitude"),

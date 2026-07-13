@@ -6,7 +6,7 @@ import time
 from venue_finder.core.config import get_config
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.repository import VenueFilters, list_venues, upsert_venues
-from venue_finder.pipeline import export_reports, persist_venues, run_continuous, run_once, seed_demo_data, scrape_venues
+from venue_finder.pipeline import export_reports, persist_venues, run_continuous, run_once, scrape_venues
 from venue_finder.webapp import run_server
 
 
@@ -52,8 +52,6 @@ def build_parser() -> argparse.ArgumentParser:
     scrape_parser.add_argument("--no-live-scrapers", action="store_true", help="Skip scraper execution")
 
     subparsers.add_parser("export", help="Export the current database to CSV and Excel")
-
-    subparsers.add_parser("seed-demo", help="Populate the database with sample venues")
 
     search_parser = subparsers.add_parser("search", help="Search the venue database with filters")
     search_parser.add_argument("--max-distance-km", type=float)
@@ -106,13 +104,6 @@ def main() -> None:
     if args.command == "export":
         init_from_config(config)
         csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
-        print(f"CSV export: {csv_path}")
-        print(f"Excel export: {xlsx_path}")
-        return
-
-    if args.command == "seed-demo":
-        inserted, csv_path, xlsx_path = seed_demo_data()
-        print(f"Inserted {inserted} demo venues")
         print(f"CSV export: {csv_path}")
         print(f"Excel export: {xlsx_path}")
         return

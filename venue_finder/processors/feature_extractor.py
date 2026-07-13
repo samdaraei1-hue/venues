@@ -39,6 +39,16 @@ def extract_feature_flags(text: str | None) -> dict[str, bool]:
     return flags
 
 
+def normalize_quiet_time(value: str | None) -> str | None:
+    if not value or not re.fullmatch(r"\d{1,2}:\d{2}", value.strip()):
+        return None
+    hour_text, minute_text = value.strip().split(":", 1)
+    hour, minute = int(hour_text), int(minute_text)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def extract_quiet_hours(text: str | None) -> tuple[str | None, str | None]:
     lower = (text or "").lower()
     start = None
@@ -48,14 +58,13 @@ def extract_quiet_hours(text: str | None) -> tuple[str | None, str | None]:
     if quiet_match:
         hour = int(quiet_match.group(1))
         minute = int(quiet_match.group(2) or "00")
-        start = f"{hour:02d}:{minute:02d}"
+        start = normalize_quiet_time(f"{hour:02d}:{minute:02d}")
 
     range_match = re.search(r"(\d{1,2})(?:[:.](\d{2}))?\s*(?:uhr)?\s*(?:-|bis|to|until)\s*(\d{1,2})(?:[:.](\d{2}))?", lower)
     if range_match and start is None:
         hour = int(range_match.group(1))
         minute = int(range_match.group(2) or "00")
-        start = f"{hour:02d}:{minute:02d}"
-        end = f"{int(range_match.group(3)):02d}:{int(range_match.group(4) or '00'):02d}"
+        start = normalize_quiet_time(f"{hour:02d}:{minute:02d}")
+        end = normalize_quiet_time(f"{int(range_match.group(3)):02d}:{int(range_match.group(4) or '00'):02d}")
 
     return start, end
-

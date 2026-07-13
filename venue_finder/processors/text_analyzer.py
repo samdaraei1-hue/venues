@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from venue_finder.core.models import Venue
+from venue_finder.processors.feature_extractor import normalize_quiet_time
 
 
 PARTY_KEYWORDS = {
@@ -164,13 +165,13 @@ class TextAnalyzer:
         if match:
             hour = int(match.group("hour"))
             minute = int(match.group("minute") or "00")
-            return f"{hour:02d}:{minute:02d}"
+            return normalize_quiet_time(f"{hour:02d}:{minute:02d}")
 
         match = TIME_RANGE_PATTERN.search(text)
         if match:
             hour = int(match.group("start"))
             minute = int(match.group("start_minute") or "00")
-            return f"{hour:02d}:{minute:02d}"
+            return normalize_quiet_time(f"{hour:02d}:{minute:02d}")
         return None
 
     def _time_to_minutes(self, value: str | None) -> int | None:
@@ -178,6 +179,10 @@ class TextAnalyzer:
             return None
         try:
             hour_str, minute_str = value.split(":", 1)
+            normalized = normalize_quiet_time(f"{hour_str}:{minute_str}")
+            if normalized is None:
+                return None
+            hour_str, minute_str = normalized.split(":", 1)
             return int(hour_str) * 60 + int(minute_str)
         except Exception:
             return None

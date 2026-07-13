@@ -24,7 +24,8 @@ except ModuleNotFoundError:  # pragma: no cover
     export_csv = None  # type: ignore
     export_excel = None  # type: ignore
 
-from venue_finder.processors.feature_extractor import extract_feature_flags, extract_quiet_hours
+from venue_finder.processors.feature_extractor import extract_feature_flags, extract_quiet_hours, normalize_quiet_time
+from venue_finder.processors.price_parser import extract_prices
 from venue_finder.processors.capacity_parser import (
     extract_camping_capacity,
     extract_maximum_guests,
@@ -122,6 +123,8 @@ def normalize_scraped_name(venue: Venue) -> None:
 def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, frankfurt_lon: float) -> Venue:
     normalize_scraped_name(venue)
     text = collect_text(venue)
+    venue.quiet_hours_start = normalize_quiet_time(venue.quiet_hours_start)
+    venue.quiet_hours_end = normalize_quiet_time(venue.quiet_hours_end)
 
     location_hint = infer_location_hint(name=venue.name, raw_text=venue.raw_text, source_url=venue.source_url)
     current_city = (venue.city or "").strip().lower()
@@ -145,6 +148,11 @@ def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, fra
         venue.number_of_rooms = extract_number_of_rooms(text)
     if venue.camping_capacity is None:
         venue.camping_capacity = extract_camping_capacity(text)
+    price_per_night, price_per_person = extract_prices(text)
+    if venue.price_per_night is None:
+        venue.price_per_night = price_per_night
+    if venue.price_per_person is None:
+        venue.price_per_person = price_per_person
 
     feature_flags = extract_feature_flags(text)
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)
@@ -397,6 +405,8 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
 
     # Refresh feature flags + quiet hours from current text.
     text = collect_text(venue)
+    venue.quiet_hours_start = normalize_quiet_time(venue.quiet_hours_start)
+    venue.quiet_hours_end = normalize_quiet_time(venue.quiet_hours_end)
     feature_flags = extract_feature_flags(text)
 
     if venue.maximum_guests is None:
@@ -409,6 +419,11 @@ def recalculate_scores(venue: Venue, config: AppConfig) -> Venue:
         venue.number_of_rooms = extract_number_of_rooms(text)
     if venue.camping_capacity is None:
         venue.camping_capacity = extract_camping_capacity(text)
+    price_per_night, price_per_person = extract_prices(text)
+    if venue.price_per_night is None:
+        venue.price_per_night = price_per_night
+    if venue.price_per_person is None:
+        venue.price_per_person = price_per_person
 
 
     venue.camping_allowed = venue.camping_allowed or feature_flags.get("camping_allowed", False)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -287,10 +288,10 @@ def venues_add():
     config = get_config()
 
     name = (request.form.get("name") or "").strip() or None
-    source_name = (request.form.get("source_name") or "").strip() or None
+    source_name = (request.form.get("source_name") or "").strip() or "manual"
     city = (request.form.get("city") or "").strip() or None
 
-    source_url = (request.form.get("source_url") or "").strip() or "manual://unknown"
+    source_url = (request.form.get("source_url") or "").strip() or f"manual://{uuid4().hex}"
     raw_text = (request.form.get("raw_text") or "").strip() or None
 
     venue = Venue(
@@ -298,6 +299,10 @@ def venues_add():
         source_name=source_name,
         city=city,
         maximum_guests=_int_param(request.form.get("maximum_guests")),
+        number_of_beds=_int_param(request.form.get("number_of_beds")),
+        number_of_rooms=_int_param(request.form.get("number_of_rooms")),
+        price_per_night=_float_param(request.form.get("price_per_night")),
+        price_per_person=_float_param(request.form.get("price_per_person")),
         camping_allowed=_bool_param(request.form.get("camping_allowed")),
         parties_allowed=_bool_param(request.form.get("parties_allowed")),
         bbq_available=_bool_param(request.form.get("bbq_available")),

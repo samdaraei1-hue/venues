@@ -117,6 +117,16 @@ def _clean_postal(value: str | None) -> str | None:
     return value if re.fullmatch(r"\d{5}", value) else None
 
 
+def _known_city_from_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = _normalize_key(value)
+    for city in sorted(CITY_COORDINATES, key=len, reverse=True):
+        if re.search(rf"(?:^|\s){re.escape(city)}(?:\s|$)", normalized):
+            return city.title()
+    return None
+
+
 def _normalize_key(value: str | None) -> str:
     if not value:
         return ""
@@ -171,7 +181,8 @@ def infer_location_hint(*, name: str | None = None, raw_text: str | None = None,
     postal_match = POSTAL_CITY_RE.search(text)
     if postal_match:
         hint.postal_code = _clean_postal(postal_match.group("postal"))
-        hint.city = _clean_city(postal_match.group("city"))
+        parsed_city = _clean_city(postal_match.group("city"))
+        hint.city = _known_city_from_text(parsed_city) or parsed_city
 
     if hint.city is None:
         comma_match = COMMA_CITY_RE.search(text)
