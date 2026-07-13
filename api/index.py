@@ -22,6 +22,13 @@ from venue_finder.core.config import get_config  # noqa: E402
 from venue_finder.core.database import init_from_config, session_scope  # noqa: E402
 from venue_finder.core.keywords import DEFAULT_SEARCH_KEYWORDS  # noqa: E402
 from venue_finder.core.models import Venue  # noqa: E402
+from venue_finder.core.sources import (  # noqa: E402
+    add_source,
+    list_sources,
+    remove_source,
+    reset_default_sources,
+    set_source_enabled,
+)
 from venue_finder.core.repository import (  # noqa: E402
     VenueFilters,
     add_keyword,
@@ -105,6 +112,7 @@ def dashboard():
             [],
             params,
             [],
+            list_sources(config.sources_file),
             message=(message or db_error or "Database error"),
         )
 
@@ -112,21 +120,11 @@ def dashboard():
         seed_default_keywords(session)
         venues = list_venues(session, filters)
 
-        seeded_demo = False
-        if not venues:
-            from venue_finder.pipeline import seed_demo_data  # local import to avoid cycles
-
-            inserted, csv_path, xlsx_path = seed_demo_data()
-            seeded_demo = inserted > 0
-            venues = list_venues(session, filters)
-
         keywords = list_keywords(session)
 
-    body_message = message
-    if seeded_demo:
-        body_message = "DB empty: seeded demo venues." if not body_message else body_message
-
-    return _render_page(venues, params, keywords, message=body_message)
+    sources = list_sources(config.sources_file)
+    body_message = message or ("No venues yet. Run scrape to populate the table." if not venues else None)
+    return _render_page(venues, params, keywords, sources, message=body_message)
 
 
 
@@ -196,6 +194,53 @@ def keywords_reset():
     config = get_config()
     with session_scope(config.database_url) as session:
         replace_keywords(session, DEFAULT_SEARCH_KEYWORDS)
+    return redirect("/")
+
+
+@app.route("/sources/add", methods=["POST"])
+def sources_add():
+    config = get_config()
+    source_name = (request.form.get("source_name") or "").strip()
+    if source_name:
+        try:
+            add_source(config.sources_file, source_name)
+        except OSError as exc:
+            return redirect(f"/?message={urlencode({'m': f'Could not save source settings: {exc}'})[2:]}")
+    return redirect("/")
+
+
+@app.route("/sources/toggle", methods=["GET"])
+def sources_toggle():
+    config = get_config()
+    source_name = (request.args.get("source_name") or "").strip()
+    enabled = (request.args.get("enabled") or "").lower() in {"1", "true", "yes", "on"}
+    if source_name:
+        try:
+            set_source_enabled(config.sources_file, source_name, enabled)
+        except OSError as exc:
+            return redirect(f"/?message={urlencode({'m': f'Could not save source settings: {exc}'})[2:]}")
+    return redirect("/")
+
+
+@app.route("/sources/remove", methods=["GET"])
+def sources_remove():
+    config = get_config()
+    source_name = (request.args.get("source_name") or "").strip()
+    if source_name:
+        try:
+            remove_source(config.sources_file, source_name)
+        except OSError as exc:
+            return redirect(f"/?message={urlencode({'m': f'Could not save source settings: {exc}'})[2:]}")
+    return redirect("/")
+
+
+@app.route("/sources/reset", methods=["GET"])
+def sources_reset():
+    config = get_config()
+    try:
+        reset_default_sources(config.sources_file)
+    except OSError as exc:
+        return redirect(f"/?message={urlencode({'m': f'Could not save source settings: {exc}'})[2:]}")
     return redirect("/")
 
 
