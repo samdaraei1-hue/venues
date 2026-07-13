@@ -169,7 +169,10 @@ def _merge_scraped_fields(target: Venue, source: Venue) -> None:
             "lake_or_river_nearby",
             "private_property",
         }:
-            setattr(target, column, bool(getattr(target, column, False) or value))
+            # A new detail-page scrape is authoritative. Keeping an old `True`
+            # here made false positives (for example camping from a footer)
+            # impossible to correct on later runs.
+            setattr(target, column, bool(value))
             continue
 
         setattr(target, column, value)

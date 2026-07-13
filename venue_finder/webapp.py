@@ -35,6 +35,7 @@ from venue_finder.core.repository import (
 from venue_finder.pipeline import recalculate_scores, run_continuous, run_once
 from venue_finder.core.models import Venue
 from venue_finder.core.search_area import SearchArea, get_search_area, save_search_area
+from venue_finder.processors.feature_extractor import normalize_quiet_time
 
 
 import threading
@@ -183,6 +184,9 @@ def _render_page(
         beds_html = str(venue.number_of_beds or "")
         rooms_html = str(venue.number_of_rooms or "")
         camping_capacity_html = str(venue.camping_capacity or "")
+        quiet_start_display = normalize_quiet_time(venue.quiet_hours_start) or ""
+        quiet_end_display = normalize_quiet_time(venue.quiet_hours_end) or ""
+        camping_label = "yes" if venue.camping_allowed and venue.camping_capacity is not None else "possible; cap unknown" if venue.camping_allowed else "no"
 
         camping_html = (
             "<select name='camping_allowed'>"
@@ -218,10 +222,10 @@ def _render_page(
         )
 
         quiet_start_html = (
-            f"<input name='quiet_hours_start' value='{escape(venue.quiet_hours_start or '')}' />" if is_edit else escape(venue.quiet_hours_start or "")
+            f"<input name='quiet_hours_start' value='{escape(quiet_start_display)}' />" if is_edit else escape(quiet_start_display)
         )
         quiet_end_html = (
-            f"<input name='quiet_hours_end' value='{escape(venue.quiet_hours_end or '')}' />" if is_edit else escape(venue.quiet_hours_end or "")
+            f"<input name='quiet_hours_end' value='{escape(quiet_end_display)}' />" if is_edit else escape(quiet_end_display)
         )
 
         suitability_html = f"<input name='suitability_summary' value='{escape(venue.suitability_summary or '')}' />" if is_edit else escape(venue.suitability_summary or "")
@@ -245,28 +249,26 @@ def _render_page(
         )
 
         rows.append(
-            "<tr>"
-            f"<td>{venue.id}</td>"
-            f"<td class='score {score_class}'>{score}</td>"
-            f"<td>{name_html}</td>"
-            f"<td>{source_name_html}</td>"
-            f"<td>{city_html}</td>"
-            f"<td>{guests_html}</td>"
-            f"<td>{beds_html}</td>"
-            f"<td>{rooms_html}</td>"
-            f"<td>{camping_capacity_html}</td>"
-            f"<td>{venue.distance_from_frankfurt_km or ''}</td>"
-            f"<td>{venue.price_per_night or ''}</td>"
-            f"<td>{venue.price_per_person or ''}</td>"
-            f"<td>{camping_html}</td>"
-            f"<td>{parties_html}</td>"
-            f"<td>{bbq_html}</td>"
-            f"<td>{loud_music_html}</td>"
-            f"<td>{quiet_start_html}</td>"
-            f"<td>{quiet_end_html}</td>"
-            f"<td>{suitability_html}</td>"
-            f"<td><div style='display:flex;flex-direction:column;gap:6px;align-items:flex-start;'>{delete_form}{edit_or_save}<a href='{escape(venue.source_url)}' target='_blank' rel='noreferrer'>open</a></div></td>"
-            "</tr>"
+            "<article class='venue-card'>"
+            "<div class='venue-head'>"
+            f"<span class='score-pill {score_class}'>{score}</span>"
+            f"<div><h3>{name_html or 'Unnamed venue'}</h3><p>{city_html or 'City unknown'} · {source_name_html or 'source unknown'}</p></div>"
+            f"<span class='distance'>{venue.distance_from_frankfurt_km or '?'} km</span>"
+            "</div>"
+            "<div class='metric-row'>"
+            f"<span><b>{guests_html or '?'}</b> guests</span><span><b>{beds_html or '?'}</b> beds</span>"
+            f"<span><b>{venue.price_per_night or '?'}</b> EUR/night</span><span><b>{venue.price_per_person or '?'}</b> EUR/person</span>"
+            "</div>"
+            "<div class='tag-row'>"
+            f"<span class='tag'>{camping_label}</span><span class='tag'>party: {parties_html}</span><span class='tag'>BBQ: {bbq_html}</span><span class='tag'>music: {loud_music_html}</span>"
+            "</div>"
+            f"<p class='summary'>{suitability_html}</p>"
+            "<details><summary>Details and actions</summary><div class='detail-grid'>"
+            f"<span>Rooms <b>{rooms_html or '?'}</b></span><span>Camping capacity <b>{camping_capacity_html or 'unknown'}</b></span>"
+            f"<span>Quiet start <b>{quiet_start_html or 'not stated'}</b></span><span>Quiet end <b>{quiet_end_html or 'not stated'}</b></span>"
+            f"<span>Record ID <b>{venue.id}</b></span>"
+            f"<div class='venue-actions'>{delete_form}{edit_or_save}<a class='button secondary' href='{escape(venue.source_url)}' target='_blank' rel='noreferrer'>open source</a></div>"
+            "</div></details></article>"
         )
 
 
@@ -425,34 +427,23 @@ def _render_page(
     }}
     .button.primary {{ background: var(--accent); color: white; }}
     .button.secondary {{ background: #111827; color: white; }}
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      background: rgba(255,255,255,0.92);
-      border-radius: 20px;
-      overflow: hidden;
-      border: 1px solid var(--line);
-    }}
-    th, td {{
-      padding: 12px 10px;
-      border-bottom: 1px solid var(--line);
-      vertical-align: top;
-      text-align: left;
-      font-size: 14px;
-    }}
-    th {{
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: #f8f2e7;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      font-size: 12px;
-    }}
-    .score.good {{ background: var(--good); font-weight: 700; }}
-    .score.mid {{ background: var(--mid); font-weight: 700; }}
-    .score.bad {{ background: var(--bad); font-weight: 700; }}
-    .table-wrap {{ overflow: auto; border-radius: 20px; }}
+    .venue-list {{ display: grid; gap: 14px; }}
+    .venue-card {{ background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; box-shadow: 0 8px 22px rgba(31,41,55,.05); }}
+    .venue-head {{ display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }}
+    .venue-head h3 {{ margin: 0; font-size: 19px; }}
+    .venue-head p {{ margin: 4px 0 0; color: var(--muted); font-size: 13px; }}
+    .score-pill {{ border-radius: 999px; padding: 7px 9px; font-weight: 800; font-size: 13px; }}
+    .score-pill.good {{ background: var(--good); }} .score-pill.mid {{ background: var(--mid); }} .score-pill.bad {{ background: var(--bad); }}
+    .distance {{ color: var(--accent-2); font-weight: 800; white-space: nowrap; }}
+    .metric-row, .tag-row {{ display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 13px; font-size: 13px; }}
+    .metric-row span {{ color: var(--muted); }} .metric-row b {{ color: var(--ink); font-size: 15px; }}
+    .tag {{ background: #f7f2e9; border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; }}
+    .summary {{ margin: 12px 0 0; color: #4b5563; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }}
+    details {{ margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }}
+    summary {{ cursor: pointer; color: var(--accent); font-weight: 700; font-size: 13px; }}
+    .detail-grid {{ display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 12px; font-size: 13px; color: var(--muted); }}
+    .detail-grid b {{ color: var(--ink); }}
+    .venue-actions {{ display: flex; gap: 8px; flex-wrap: wrap; width: 100%; align-items: center; }}
     .small {{
       color: var(--muted);
       font-size: 13px;
@@ -464,6 +455,10 @@ def _render_page(
     }}
     @media (max-width: 1100px) {{
       .hero, .grid, .stats {{ grid-template-columns: 1fr; }}
+    }}
+    @media (max-width: 560px) {{
+      .wrap {{ padding: 14px; }} .panel {{ padding: 16px; border-radius: 16px; }} h1 {{ font-size: 34px; }}
+      .venue-card {{ padding: 14px; }} .venue-head {{ grid-template-columns: auto 1fr; }} .distance {{ grid-column: 2; }}
     }}
   </style>
 </head>
@@ -558,37 +553,8 @@ def _render_page(
         <div class="actions" style="margin-top:12px;"><button class="button primary" type="submit">Add venue</button></div>
       </form>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Score</th>
-            <th>Name</th>
-            <th>Source</th>
-            <th>City</th>
-            <th>Guests</th>
-            <th>Beds</th>
-            <th>Rooms</th>
-            <th>Camping cap</th>
-            <th>Km from {escape(search_area.city)}</th>
-            <th>EUR/night</th>
-            <th>EUR/person</th>
-            <th>Camping</th>
-            <th>Parties</th>
-            <th>BBQ</th>
-            <th>Music</th>
-            <th>Quiet start</th>
-            <th>Quiet end</th>
-            <th>Summary</th>
-            <th>Link</th>
-          </tr>
-        </thead>
-        <tbody>
-          {''.join(rows) if rows else '<tr><td colspan="20">No venues found. Run scrape to populate the table.</td></tr>'}
-
-        </tbody>
-      </table>
+    <div class="venue-list">
+      {''.join(rows) if rows else '<div class="panel">No venues found. Run scrape to populate the list.</div>'}
     </div>
   </div>
 </body>

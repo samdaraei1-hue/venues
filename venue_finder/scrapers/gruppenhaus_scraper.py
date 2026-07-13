@@ -63,7 +63,13 @@ class GruppenhausScraper(BaseScraper):
         html = self.fetch_html(url)
         if not html:
             return ""
-        return self.extract_text(html)
+        text = self.extract_text(html)
+        # Similar-properties widgets append unrelated houses (including their
+        # camping labels) to the page text after the actual venue details.
+        for marker in ("hnliche Objekte", "hnliche H", "Gruppenhaus Home"):
+            if marker in text:
+                text = text.split(marker, 1)[0]
+        return text
 
     def _is_party_friendly(self, text: str) -> bool:
         lowered = text.lower()

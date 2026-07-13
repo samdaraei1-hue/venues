@@ -79,7 +79,9 @@ class BaseScraper(ABC):
 
     def extract_text(self, html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
+        # Navigation, contact forms and the site-wide footer contain generic
+        # words such as "camping" that must not be treated as venue features.
+        for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "form"]):
             tag.decompose()
         return " ".join(soup.stripped_strings)
 
