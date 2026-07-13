@@ -155,7 +155,10 @@ def scrape_now():
 
     try:
         processed, _, _ = run_once()
-        message = f"Scrape finished: {processed} new venues added. Existing venues may have been refreshed."
+        if processed:
+            message = f"Scrape finished: {processed} new venues added. Existing venues may have been refreshed."
+        else:
+            message = "Scrape finished: no new venues were saved. Results may already exist, or a source returned no listings; try again later if the source is temporarily unavailable."
     except Exception as exc:  # noqa: BLE001
         message = f"Scrape failed: {exc}"
     return redirect(f"/?message={urlencode({'m': message})[2:]}")
