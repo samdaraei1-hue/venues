@@ -9,6 +9,14 @@ import webbrowser
 from venue_finder.core.config import get_config
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.keywords import DEFAULT_SEARCH_KEYWORDS
+from venue_finder.core.sources import (
+    DEFAULT_SOURCES,
+    add_source,
+    list_sources,
+    remove_source,
+    reset_default_sources,
+    set_source_enabled,
+)
 from venue_finder.core.repository import (
     VenueFilters,
     add_keyword,
@@ -118,10 +126,31 @@ def _render_keyword_pills(keywords: list[str]) -> str:
     ) or '<span class="small">No keywords configured.</span>'
 
 
+def _source_label(source_name: str) -> str:
+    labels = {
+        "gruppenhaus": "Gruppenhaus",
+        "eventlocations": "Eventlocations",
+        "airbnb": "Airbnb",
+    }
+    return labels.get(source_name, source_name)
+
+
+def _render_source_pills(sources) -> str:
+    if not sources:
+        return '<span class="small">No sources configured.</span>'
+    return " ".join(
+        f'<span class="chip keyword-chip">[{"on" if source.enabled else "off"}] {escape(_source_label(source.source_name))} '
+        f'<a href="/sources/toggle?source_name={escape(source.source_name)}&enabled={"0" if source.enabled else "1"}" title="toggle">toggle</a> '
+        f'<a href="/sources/remove?source_name={escape(source.source_name)}" title="remove">x</a></span>'
+        for source in sources
+    )
+
+
 def _render_page(
     venues,
     params: dict[str, list[str]],
     keywords: list[str],
+    sources,
     message: str | None = None,
     edit_id: int | None = None,
     add_defaults: dict[str, str] | None = None,
@@ -484,6 +513,21 @@ def _render_page(
         <a class="button secondary" href="/keywords/reset">Reset defaults</a>
       </form>
     </div>
+    <div class="panel" style="margin-bottom:24px;">
+      <h2 style="margin-top:0;">Source websites</h2>
+      <p class="small">Enable or disable the sites that should be scraped on the next run.</p>
+      <div class="chips" style="margin-bottom:12px;">{_render_source_pills(sources)}</div>
+      <form method="post" action="/sources/add" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div class="field" style="min-width:320px;flex:1;">
+          <label>Add supported source</label>
+          <select name="source_name">
+            {''.join(f'<option value="{escape(item["source_name"])}">{escape(_source_label(item["source_name"]))}</option>' for item in DEFAULT_SOURCES)}
+          </select>
+        </div>
+        <button class="button primary" type="submit">Add source</button>
+        <a class="button secondary" href="/sources/reset">Reset defaults</a>
+      </form>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -573,6 +617,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 with session_scope(config.database_url) as session:
                     seed_default_keywords(session)
                     add_keyword(session, keyword)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/sources/add":
+            source_name = (form.get("source_name") or [""])[0].strip()
+            if source_name:
+                add_source(config.sources_file, source_name, enabled=True)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/sources/toggle":
+            source_name = params.get("source_name", [""])[0].strip()
+            enabled = _bool_param(params.get("enabled", []), default=True)
+            if source_name:
+                set_source_enabled(config.sources_file, source_name, enabled)
             self._redirect("/")
             return
 
@@ -698,15 +757,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
 
+        if parsed.path == "/sources/remove":
+            source_name = params.get("source_name", [""])[0].strip()
+            if source_name:
+                remove_source(config.sources_file, source_name)
+            self._redirect("/")
+            return
+
+        if parsed.path == "/sources/reset":
+            reset_default_sources(config.sources_file)
+            self._redirect("/")
+            return
+
         filters = _build_filters(params)
         with session_scope(config.database_url) as session:
             seed_default_keywords(session)
             venues = list_venues(session, filters)
 
             keywords = list_keywords(session)
+        sources = list_sources(config.sources_file)
 
         body_message = "No venues yet. Run scrape to populate the table." if not venues else None
-        body = _render_page(venues, params, keywords, message=body_message).encode("utf-8")
+        body = _render_page(venues, params, keywords, sources, message=body_message).encode("utf-8")
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

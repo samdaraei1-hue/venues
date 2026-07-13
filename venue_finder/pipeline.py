@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlparse
 from sqlalchemy import or_, select
 
 from venue_finder.core.config import AppConfig, get_config
+from venue_finder.core.sources import DEFAULT_SOURCES, list_sources, reset_default_sources
 
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
@@ -34,17 +35,25 @@ from venue_finder.processors.location_parser import coordinates_for_city, infer_
 from venue_finder.processors.text_analyzer import TextAnalyzer
 from venue_finder.samples import sample_venues
 from venue_finder.scrapers.gruppenhaus_scraper import GruppenhausScraper
+from venue_finder.scrapers.airbnb_scraper import AirbnbScraper
+from venue_finder.scrapers.eventlocations_scraper import EventlocationsScraper
 
 
-# Airbnb is intentionally disabled for now because the public markup is too noisy
-# and was producing incorrect locations. Re-enable it once the parser is site-specific.
-# eventlocations is also disabled for now because it returned non-Germany venue
-# pages and polluted the dataset with wrong cities like Los Angeles.
-SCRAPER_CLASSES = [GruppenhausScraper]
+SCRAPER_CLASS_MAP = {
+    "gruppenhaus": GruppenhausScraper,
+    "eventlocations": EventlocationsScraper,
+    "airbnb": AirbnbScraper,
+}
 
 
-def build_scrapers(*, max_results: int, search_keywords: list[str]) -> list:
-    return [scraper_class(max_results=max_results, search_keywords=search_keywords) for scraper_class in SCRAPER_CLASSES]
+def build_scrapers(*, max_results: int, search_keywords: list[str], enabled_sources: list[str]) -> list:
+    scrapers = []
+    for source_name in enabled_sources:
+        scraper_class = SCRAPER_CLASS_MAP.get(source_name)
+        if scraper_class is None:
+            continue
+        scrapers.append(scraper_class(max_results=max_results, search_keywords=search_keywords))
+    return scrapers
 
 
 def collect_text(venue: Venue) -> str:
@@ -193,8 +202,13 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
         keywords = list_keywords(session)
         if not keywords:
             keywords = seed_default_keywords(session)
+    sources = list_sources(config.sources_file)
+    enabled_sources = [entry.source_name for entry in sources if entry.enabled and entry.source_name in SCRAPER_CLASS_MAP]
+    if not enabled_sources:
+        reset_default_sources(config.sources_file)
+        enabled_sources = [entry["source_name"] for entry in DEFAULT_SOURCES if entry.get("enabled", False)]
 
-    for scraper in build_scrapers(max_results=config.max_search_results, search_keywords=keywords):
+    for scraper in build_scrapers(max_results=config.max_search_results, search_keywords=keywords, enabled_sources=enabled_sources):
         for item in scraper.scrape():
             venue = Venue(
                 source_name=item.source_name,

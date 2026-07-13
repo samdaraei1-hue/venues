@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "source_name": "gruppenhaus",
+      "enabled": true
+    },
+    {
+      "source_name": "eventlocations",
+      "enabled": true
+    },
+    {
+      "source_name": "airbnb",
+      "enabled": false
+    }
+  ]
+}

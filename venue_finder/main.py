@@ -6,16 +6,7 @@ import time
 from venue_finder.core.config import get_config
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.repository import VenueFilters, list_venues, upsert_venues
-from venue_finder.pipeline import (
-    backfill_gruppenhaus_details,
-    export_reports,
-    persist_venues,
-    run_continuous,
-    run_once,
-    seed_demo_data,
-    scrape_venues,
-)
-from venue_finder.processors.text_analyzer import TextAnalyzer
+from venue_finder.pipeline import export_reports, persist_venues, run_continuous, run_once, seed_demo_data, scrape_venues
 from venue_finder.webapp import run_server
 
 
@@ -104,8 +95,6 @@ def main() -> None:
         if args.no_live_scrapers:
             venues = scrape_venues(config, use_live_scrapers=False)
             inserted = persist_venues(config.database_url, venues)
-            analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
-            inserted += backfill_gruppenhaus_details(config, analyzer)
             csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
         else:
             inserted, csv_path, xlsx_path = run_once()
