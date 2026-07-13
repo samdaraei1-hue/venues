@@ -106,12 +106,22 @@ class GruppenhausScraper(BaseScraper):
         return candidates
 
     def _paginated_listing_candidates(self, page_url: str) -> list[tuple[str, str, str]]:
-        """Read every JavaScript pagination page from Gruppenhaus results."""
+        """Read Gruppenhaus result links, without depending on a browser first."""
+        # Gruppenhaus includes the listing links in its server-rendered HTML.
+        # On serverless hosts a browser may start successfully yet return an
+        # empty page, which used to make a scrape silently discover no venues.
+        html = self._fetch_html_with_request(page_url, timeout=20)
+        if html:
+            candidates = self._listing_candidates(BeautifulSoup(html, "html.parser"))
+            if candidates:
+                return candidates
+
+        # Keep JavaScript pagination as a fallback for source pages that do
+        # not expose their results in the initial HTML.
         try:
             from playwright.sync_api import sync_playwright
         except Exception:
-            soup = self.soup_from_url(page_url)
-            return self._listing_candidates(soup) if soup else []
+            return []
 
         candidates: list[tuple[str, str, str]] = []
         seen_pages: set[str] = set()
