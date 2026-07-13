@@ -62,7 +62,9 @@ class GruppenhausScraper(BaseScraper):
         return bool(re.search(r"-hs\d+\.html(?:\?.*)?$", lowered_href))
 
     def _fetch_detail_data(self, url: str) -> tuple[str, float | None, float | None]:
-        html = self.fetch_html(url)
+        # Detail pages are server-rendered. Avoid launching a browser for each
+        # venue; otherwise a single scrape times out before persistence.
+        html = self.fetch_html(url, prefer_browser=False)
         if not html:
             return "", None, None
         soup = BeautifulSoup(html, "html.parser")
@@ -236,7 +238,10 @@ class GruppenhausScraper(BaseScraper):
         venues: list[ScrapedVenue] = []
         seen: set[str] = set()
 
-        candidate_pages = self.iter_search_pages() or [("", self.base_url)]
+        # Gruppenhaus city results already contain all relevant venue types.
+        # Running every generic keyword repeats the same expensive detail
+        # requests and causes serverless invocations to time out.
+        candidate_pages = (self.iter_search_pages() or [("", self.base_url)])[:1]
 
         for keyword, page_url in candidate_pages:
             for text, href, card_text in self._paginated_listing_candidates(page_url):

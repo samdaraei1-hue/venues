@@ -149,11 +149,7 @@ class BaseScraper(ABC):
             return ""
         return ""
 
-    def fetch_html(self, url: str, *, timeout: int = 10) -> str:
-        html = self._fetch_html_with_playwright(url, timeout=timeout)
-        if html:
-            return html
-
+    def _fetch_html_with_request(self, url: str, *, timeout: int = 10) -> str:
         request = Request(
             url,
             headers={
@@ -167,6 +163,13 @@ class BaseScraper(ABC):
                 return response.read().decode("utf-8", errors="replace")
         except Exception:
             return ""
+
+    def fetch_html(self, url: str, *, timeout: int = 10, prefer_browser: bool = True) -> str:
+        if prefer_browser:
+            html = self._fetch_html_with_playwright(url, timeout=timeout)
+            if html:
+                return html
+        return self._fetch_html_with_request(url, timeout=timeout)
 
     def soup_from_url(self, url: str) -> BeautifulSoup:
         return BeautifulSoup(self.fetch_html(url), "html.parser")
