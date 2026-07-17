@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
 
 from .base import BaseScraper, ScrapedVenue
 
@@ -26,8 +29,14 @@ class EventlocationsScraper(BaseScraper):
         "preis auf anfrage",
     )
 
+    def search_url_for_keyword(self, keyword: str) -> str:
+        # Eventlocations uses city landing pages rather than a ?q= endpoint.
+        city = keyword.strip().lower().split(" am ", 1)[0]
+        normalized = unicodedata.normalize("NFKD", city).encode("ascii", "ignore").decode("ascii")
+        slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+        return f"{self.base_url}/{slug}" if slug else self.base_url
+
     def _is_listing_link(self, href: str, text: str) -> bool:
-        lowered_text = text.lower()
         lowered_href = href.lower()
         if href in {self.base_url, "/", "https://www.eventlocations.com/de/", "https://www.eventlocations.com/"}:
             return False
@@ -35,19 +44,23 @@ class EventlocationsScraper(BaseScraper):
             return False
         if not any(token in lowered_href for token in self.allowed_hrefs):
             return False
-        return "," in lowered_text or bool(re.search(r"\b[a-zäöüß].*\d", lowered_text)) or any(
-            token in lowered_text for token in self.venue_signals
-        )
+        # The /de/venues/ path is the stable listing contract. Requiring words
+        # such as "venue" in the title rejected valid venue links.
+        return True
 
     def scrape(self) -> list[ScrapedVenue]:
         venues: list[ScrapedVenue] = []
         seen: set[str] = set()
 
-        candidate_pages = self.iter_search_pages() or [("", self.base_url)]
-        candidate_pages.append(("", self.base_url))
+        # The first keyword is always the configured search-area city. One city
+        # page contains the venue inventory; generic keyword pages do not exist.
+        candidate_pages = (self.iter_search_pages() or [("", self.base_url)])[:1]
 
         for keyword, page_url in candidate_pages:
-            soup = self.soup_from_url(page_url)
+            html = self._fetch_html_with_request(page_url, timeout=20)
+            if not html:
+                html = self.fetch_html(page_url, timeout=15, prefer_browser=True)
+            soup = BeautifulSoup(html, "html.parser")
             if not soup:
                 continue
 
@@ -63,9 +76,6 @@ class EventlocationsScraper(BaseScraper):
                 card = anchor.find_parent(["li", "article", "div"]) or anchor.parent
                 raw_text = self.first_text(card.get_text(" ", strip=True) if card else text) or text
                 lowered = raw_text.lower()
-                if not any(token in lowered for token in self.venue_signals):
-                    continue
-
                 source_url = urljoin(page_url, href)
                 if source_url.rstrip("/") in {self.base_url.rstrip("/"), "https://www.eventlocations.com"}:
                     continue

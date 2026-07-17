@@ -200,12 +200,15 @@ def enrich_venue(venue: Venue, analyzer: TextAnalyzer, frankfurt_lat: float, fra
     return venue
 
 
-def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
+def scrape_venues(config, *, use_live_scrapers: bool = True, diagnostics: dict | None = None) -> list[Venue]:
     analyzer = TextAnalyzer(openai_api_key=config.openai_api_key)
     scraped: list[Venue] = []
 
     if not use_live_scrapers:
         return scraped
+
+    if diagnostics is not None:
+        diagnostics.update(discovered=0, accepted=0, missing_location=0, outside_radius=0, source_counts={}, errors=[])
 
     with session_scope(config.database_url) as session:
         keywords = list_keywords(session)
@@ -227,7 +230,12 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
             # A changed/unavailable source must not prevent healthy sources from
             # being persisted during the same run.
             print(f"Scraper {scraper.source_name} failed: {exc}")
+            if diagnostics is not None:
+                diagnostics["errors"].append(f"{scraper.source_name}: {exc}")
             continue
+        if diagnostics is not None:
+            diagnostics["discovered"] += len(items)
+            diagnostics["source_counts"][scraper.source_name] = len(items)
         for item in items:
             venue = Venue(
                 source_name=item.source_name,
@@ -264,9 +272,18 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
             enrich_venue(venue, analyzer, search_area.latitude, search_area.longitude)
             # Keep only real, local results. Global links without a resolvable
             # location must never make it into the user's database.
-            if venue.distance_from_frankfurt_km is None or venue.distance_from_frankfurt_km > search_area.radius_km:
+            if venue.distance_from_frankfurt_km is None:
+                if diagnostics is not None:
+                    diagnostics["missing_location"] += 1
+                continue
+            if venue.distance_from_frankfurt_km > search_area.radius_km:
+                if diagnostics is not None:
+                    diagnostics["outside_radius"] += 1
                 continue
             scraped.append(venue)
+
+    if diagnostics is not None:
+        diagnostics["accepted"] = len(scraped)
 
     return scraped
 
@@ -389,6 +406,20 @@ def run_once() -> tuple[int, Path, Path]:
     inserted = persist_venues(config.database_url, venues)
     csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
     return inserted, csv_path, xlsx_path
+
+
+def run_once_detailed() -> tuple[int, dict, Path, Path]:
+    """Run a scrape and expose funnel counts for the dashboard."""
+    config = get_config()
+    init_from_config(config)
+    with session_scope(config.database_url) as session:
+        seed_default_keywords(session)
+    diagnostics: dict = {}
+    venues = scrape_venues(config, use_live_scrapers=True, diagnostics=diagnostics)
+    inserted = persist_venues(config.database_url, venues)
+    diagnostics["updated"] = max(0, len(venues) - inserted)
+    csv_path, xlsx_path = export_reports(config.database_url, config.output_dir)
+    return inserted, diagnostics, csv_path, xlsx_path
 
 
 def run_continuous(interval_minutes: int) -> None:

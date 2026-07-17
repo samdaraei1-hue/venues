@@ -32,7 +32,7 @@ from venue_finder.core.repository import (
 )
 
 
-from venue_finder.pipeline import recalculate_scores, run_continuous, run_once
+from venue_finder.pipeline import recalculate_scores, run_continuous, run_once, run_once_detailed
 from venue_finder.core.models import Venue
 from venue_finder.core.search_area import SearchArea, get_search_area, save_search_area
 from venue_finder.processors.feature_extractor import normalize_quiet_time
@@ -649,11 +649,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/scrape-now":
-            processed, _, _ = run_once()
-            if processed:
-                message = f"Scrape finished: {processed} new venues added. Existing venues may have been refreshed."
-            else:
-                message = "Scrape finished: no new venues were saved. Results may already exist, or a source returned no listings; try again later if the source is temporarily unavailable."
+            processed, report, _, _ = run_once_detailed()
+            sources = ", ".join(f"{name}: {count}" for name, count in report.get("source_counts", {}).items()) or "none"
+            message = (
+                f"Scrape finished — discovered {report.get('discovered', 0)} ({sources}); "
+                f"accepted {report.get('accepted', 0)}; added {processed}; updated {report.get('updated', 0)}; "
+                f"missing location {report.get('missing_location', 0)}; outside radius {report.get('outside_radius', 0)}."
+            )
+            if report.get("errors"):
+                message += " Errors: " + " | ".join(report["errors"])
             self._redirect("/?message=" + urlencode({"m": message}))
             return
 

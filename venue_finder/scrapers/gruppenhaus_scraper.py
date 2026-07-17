@@ -46,7 +46,7 @@ class GruppenhausScraper(BaseScraper):
 
     def search_url_for_keyword(self, keyword: str) -> str:
         """Use Gruppenhaus' real results page, not the homepage query string."""
-        return f"{self.base_url}?q={quote_plus(keyword)}"
+        return f"{self.base_url}?freshseek=1&suchort={quote_plus(keyword)}"
 
     def _is_listing_link(self, href: str, text: str) -> bool:
         lowered_text = text.lower()
