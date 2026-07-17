@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlparse
 from sqlalchemy import or_, select
 
 from venue_finder.core.config import AppConfig, get_config
-from venue_finder.core.sources import DEFAULT_SOURCES, list_sources, reset_default_sources
+from venue_finder.core.sources import list_sources
 
 from venue_finder.core.database import init_from_config, session_scope
 from venue_finder.core.models import Venue
@@ -216,11 +216,19 @@ def scrape_venues(config, *, use_live_scrapers: bool = True) -> list[Venue]:
     sources = list_sources(config.sources_file)
     enabled_sources = [entry.source_name for entry in sources if entry.enabled and entry.source_name in SCRAPER_CLASS_MAP]
     if not enabled_sources:
-        reset_default_sources(config.sources_file)
-        enabled_sources = [entry["source_name"] for entry in DEFAULT_SOURCES if entry.get("enabled", False)]
+        # Respect the user's source selection. Re-enabling defaults here made a
+        # deliberate source change appear broken and scraped unexpected sites.
+        return []
 
     for scraper in build_scrapers(max_results=config.max_search_results, search_keywords=keywords, enabled_sources=enabled_sources):
-        for item in scraper.scrape():
+        try:
+            items = scraper.scrape()
+        except Exception as exc:
+            # A changed/unavailable source must not prevent healthy sources from
+            # being persisted during the same run.
+            print(f"Scraper {scraper.source_name} failed: {exc}")
+            continue
+        for item in items:
             venue = Venue(
                 source_name=item.source_name,
                 source_url=item.source_url,

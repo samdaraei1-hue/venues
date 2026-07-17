@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 import threading
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -48,6 +48,12 @@ def init_db(database_url: str) -> None:
     _, engine = build_session_factory(database_url)
     _ping_engine(engine)
     Base.metadata.create_all(engine)
+    # create_all does not add columns to an existing installation. Keep this
+    # tiny migration here so upgrades work without a separate migration tool.
+    columns = {column["name"] for column in inspect(engine).get_columns("venues")}
+    if "is_hidden" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE venues ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT FALSE"))
 
 
 @contextmanager
@@ -75,4 +81,3 @@ def init_from_config(config: AppConfig) -> None:
             return
         init_db(config.database_url)
         _INIT_DONE = True
-

@@ -109,6 +109,7 @@ def _build_filters(params: dict[str, list[str]]) -> VenueFilters:
         swimming_pool=_bool_param(params.get("swimming_pool", [])),
         bbq=_bool_param(params.get("bbq", [])),
         loud_music_allowed=_bool_param(params.get("loud_music_allowed", [])),
+        party_friendly=_bool_param(params.get("party_friendly", [])),
         weekend_available=_bool_param(params.get("weekend_available", [])),
     )
 
@@ -218,7 +219,7 @@ def _render_page(
             f"<option value='0' {'selected' if not venue.loud_music_allowed else ''}>no</option>"
             "</select>"
             if is_edit
-            else ('yes' if venue.loud_music_allowed else 'no')
+            else ('yes' if venue.loud_music_allowed else 'not confirmed')
         )
 
         quiet_start_html = (
@@ -244,7 +245,7 @@ def _render_page(
         delete_form = (
             f"<form method='post' action='/venues/delete' style='margin:0;'>"
             f"<input type='hidden' name='venue_id' value='{venue.id}' />"
-            f"<button class='button secondary' type='submit' onclick=\"return confirm('Delete venue {venue.id}?')\">delete</button>"
+            f"<button class='button secondary' type='submit' onclick=\"return confirm('Hide venue {venue.id}? It will remain stored to prevent duplicates.')\">hide</button>"
             f"</form>"
         )
 
@@ -278,6 +279,7 @@ def _render_page(
             _render_checkbox("swimming_pool", "Pool", filters.swimming_pool),
             _render_checkbox("bbq", "BBQ", filters.bbq),
             _render_checkbox("loud_music_allowed", "Loud music", filters.loud_music_allowed),
+            _render_checkbox("party_friendly", "Party friendly", filters.party_friendly),
             _render_checkbox("weekend_available", "Weekend available", filters.weekend_available),
         ]
     )
@@ -581,6 +583,7 @@ def _handle_json(params: dict[str, list[str]]) -> str:
                 "party_score": venue.party_score,
                 "camping_allowed": venue.camping_allowed,
                 "loud_music_allowed": venue.loud_music_allowed,
+                "parties_allowed": venue.parties_allowed,
                 "bbq_available": venue.bbq_available,
                 "quiet_hours_start": venue.quiet_hours_start,
                 "quiet_hours_end": venue.quiet_hours_end,

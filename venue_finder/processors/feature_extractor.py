@@ -6,7 +6,7 @@ import re
 POSITIVE_PATTERNS: dict[str, tuple[str, ...]] = {
     "camping_allowed": ("camping erlaubt", "camping möglich", "camping möglichkeit", "camping", "zelten erlaubt", "zeltplatz"),
     "parties_allowed": ("party erlaubt", "parties allowed", "feier", "party", "veranstaltung", "eventlocation"),
-    "loud_music_allowed": ("laute musik erlaubt", "loud music allowed", "musik bis", "musik erlaubt", "party bis", "open end"),
+    "loud_music_allowed": ("laute musik erlaubt", "loud music allowed", "musik bis", "musik erlaubt", "party bis", "open end", "keine lautstärkebegrenzung", "keine lautstaerkebegrenzung", "tanzen und musik", "dj und musik"),
     "dj_allowed": ("dj", "dj erlaubt", "dj möglich"),
     "sound_system_available": ("sound system", "anlage", "soundanlage", "pa-anlage", "musikanlage"),
     "outdoor_party_area": ("outdoor", "garten", "terrasse", "wiese", "hof", "außenbereich", "aussenbereich"),

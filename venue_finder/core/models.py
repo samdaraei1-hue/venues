@@ -87,6 +87,7 @@ class Venue(Base):
     source_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_metadata: Mapped[dict | list | None] = mapped_column("metadata", JSON, nullable=True)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

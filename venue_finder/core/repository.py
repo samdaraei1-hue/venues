@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Any, Iterable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ class VenueFilters:
     swimming_pool: bool = False
     bbq: bool = False
     loud_music_allowed: bool = False
+    party_friendly: bool = False
     weekend_available: bool = False
 
 
@@ -38,6 +40,8 @@ def apply_filters(query, filters: VenueFilters):
         query = query.where(Venue.bbq_available.is_(True))
     if filters.loud_music_allowed:
         query = query.where(Venue.loud_music_allowed.is_(True))
+    if filters.party_friendly:
+        query = query.where(Venue.parties_allowed.is_(True))
     if filters.guest_count is not None:
         query = query.where(
             or_(
@@ -76,7 +80,7 @@ def _is_displayable_venue(venue: Venue) -> bool:
 
 
 def list_venues(session: Session, filters: VenueFilters | None = None) -> list[Venue]:
-    query = select(Venue).order_by(Venue.party_score.desc().nullslast(), Venue.id.asc())
+    query = select(Venue).where(Venue.is_hidden.is_(False)).order_by(Venue.party_score.desc().nullslast(), Venue.id.asc())
     if filters is not None:
         query = apply_filters(query, filters)
     venues = list(session.scalars(query).all())
@@ -91,7 +95,9 @@ def delete_venue_by_id(session: Session, venue_id: int) -> bool:
     venue = get_venue_by_id(session, venue_id)
     if venue is None:
         return False
-    session.delete(venue)
+    # Soft delete: retain the identity and scraped content for future duplicate
+    # checks. A later scrape refreshes the row but must not make it visible.
+    venue.is_hidden = True
     session.flush()
     return True
 
@@ -193,6 +199,7 @@ def _venue_similarity(left: Venue, right: Venue) -> tuple[bool, str, float]:
 
 
 def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
+    venue.source_url = _canonical_source_url(venue.source_url)
     existing = session.scalar(select(Venue).where(Venue.source_url == venue.source_url))
     if existing is not None:
         _merge_scraped_fields(existing, venue)
@@ -201,6 +208,20 @@ def upsert_venue(session: Session, venue: Venue) -> tuple[Venue, bool, str]:
     # collapsed distinct venues such as different Jugendherberge locations.
     session.add(venue)
     return venue, True, "inserted"
+
+
+def _canonical_source_url(value: str) -> str:
+    """Normalize harmless URL variations so parameter changes do not duplicate rows."""
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return value.strip()
+    if parts.scheme not in {"http", "https"}:
+        return value.strip()
+    ignored = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"}
+    query = urlencode(sorted((key, val) for key, val in parse_qsl(parts.query, keep_blank_values=True) if key.lower() not in ignored))
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, query, ""))
 
 
 def upsert_venues(session: Session, venues: Iterable[Venue]) -> list[dict[str, Any]]:
